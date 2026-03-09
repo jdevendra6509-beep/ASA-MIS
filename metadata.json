@@ -1,0 +1,5 @@
+{
+  "name": "MIS Portal",
+  "description": "Management Information System with Role-Based Access, Employee Management, and Outlook Integration.",
+  "requestFramePermissions": ["camera", "geolocation"]
+}
