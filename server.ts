@@ -14,8 +14,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // --- Firebase Initialization ---
-const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT 
-  ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT) 
+const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT
+  ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
   : null;
 
 if (serviceAccount) {
@@ -41,7 +41,7 @@ async function seedDatabase() {
       console.log("Seeding default permissions...");
       const roles = ["Master Admin", "Admin", "Owner", "Partner", "Manager", "Employee"];
       const permissions = ["view_dashboard", "create_employee", "view_employee_list", "manage_settings", "view_reports"];
-      
+
       const batch = db.batch();
       roles.forEach(role => {
         permissions.forEach(perm => {
@@ -49,7 +49,7 @@ async function seedDatabase() {
           if (role === "Admin" && perm !== "manage_settings") enabled = true;
           if (perm === "view_dashboard") enabled = true;
           if (perm === "view_employee_list" && role !== "Employee") enabled = true;
-          
+
           const ref = db.collection('role_permissions').doc(`${role}_${perm}`);
           batch.set(ref, { role, permission: perm, enabled });
         });
@@ -112,7 +112,7 @@ async function getGraphClient() {
       account: tokenData.account,
       scopes: ["user.read", "mail.send"],
     });
-    
+
     return Client.init({
       authProvider: (done) => done(null, response.accessToken),
     });
@@ -120,6 +120,31 @@ async function getGraphClient() {
     console.error("Graph Client Error:", error);
     return null;
   }
+}
+
+async function sendInvitationEmail(firstName: string, email: string, registrationToken: string) {
+  console.log(`Attempting to send invitation email to: ${email}`);
+  const graphClient = await getGraphClient();
+  if (graphClient) {
+    try {
+      const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '');
+      const registrationLink = `${appUrl}/register/${registrationToken}`;
+      await graphClient.api("/me/sendMail").post({
+        message: {
+          subject: "Welcome to MIS Portal",
+          body: { contentType: "HTML", content: `<p>Welcome ${firstName}! Register here: <a href="${registrationLink}">${registrationLink}</a></p>` },
+          toRecipients: [{ emailAddress: { address: email } }]
+        }
+      });
+      console.log(`Invitation email sent successfully to: ${email}`);
+      return true;
+    } catch (error: any) {
+      console.error(`Error sending email to ${email}:`, error.message);
+      return false;
+    }
+  }
+  console.warn(`Outlook integration not active. Could not send email to: ${email}`);
+  return false;
 }
 
 async function startServer() {
@@ -198,9 +223,9 @@ async function startServer() {
   app.post("/api/auth/login", async (req, res) => {
     const { email, password } = req.body;
     const snap = await db.collection('users').where('email', '==', email).limit(1).get();
-    
+
     if (snap.empty) return res.status(401).json({ error: "Invalid credentials" });
-    
+
     const userDoc = snap.docs[0];
     const user = { id: userDoc.id, ...userDoc.data() } as any;
 
@@ -220,15 +245,15 @@ async function startServer() {
   app.get("/api/auth/verify-token/:token", async (req, res) => {
     const { token } = req.params;
     const snap = await db.collection('users').where('registrationToken', '==', token).limit(1).get();
-    
+
     if (snap.empty) return res.status(404).json({ error: "Invalid token" });
-    
+
     const user = snap.docs[0].data() as any;
     if (new Date(user.registrationTokenExpires) < new Date()) {
       return res.status(400).json({ error: "Token expired" });
     }
 
-    res.json({ 
+    res.json({
       email: user.email, firstName: user.firstName, lastName: user.lastName,
       designation: user.designation, dateOfJoining: user.dateOfJoining,
       role: user.role, department: user.department,
@@ -239,12 +264,12 @@ async function startServer() {
   app.post("/api/auth/register", async (req, res) => {
     const { token, password, ...rest } = req.body;
     const snap = await db.collection('users').where('registrationToken', '==', token).limit(1).get();
-    
+
     if (snap.empty) return res.status(404).json({ error: "Invalid token" });
-    
+
     const userDoc = snap.docs[0];
     const hashedPassword = await bcrypt.hash(password, 10);
-    
+
     try {
       await userDoc.ref.update({
         ...rest,
@@ -262,7 +287,28 @@ async function startServer() {
 
   // --- Employee Routes ---
   app.post("/api/employees", async (req, res) => {
-    const { firstName, lastName, email, role, department, ...rest } = req.body;
+    let { firstName, lastName, email, role, department, reportingPartner, reportingManager, ...rest } = req.body;
+
+    // Strict Server-side role logic enforcement
+    if (role === 'Partner') {
+      reportingPartner = '';
+      reportingManager = '';
+    } else if (role === 'Manager') {
+      reportingManager = reportingPartner; // Manager reports to Partner
+    }
+
+    if (!firstName || !lastName || !email || !role || !department) {
+      return res.status(400).json({ error: "All basic fields (First Name, Last Name, Email, Role, Dept) are mandatory." });
+    }
+
+    if (role !== 'Partner' && !reportingPartner) {
+      return res.status(400).json({ error: "Reporting Partner is mandatory for this role." });
+    }
+
+    if (role === 'Employee' && !reportingManager) {
+      return res.status(400).json({ error: "Reporting Manager is mandatory for Employee role." });
+    }
+
     const employeeCode = "EMP" + Math.random().toString(36).substr(2, 6).toUpperCase();
     const registrationToken = uuidv4();
     const expires = new Date();
@@ -270,27 +316,15 @@ async function startServer() {
 
     try {
       const docRef = await db.collection('users').add({
-        firstName, lastName, email, role, department, ...rest,
-        employeeCode, registrationToken, 
+        firstName, lastName, email, role, department, reportingPartner, reportingManager, ...rest,
+        employeeCode, registrationToken,
         registrationTokenExpires: expires.toISOString(),
         status: 'Pending',
         createdAt: admin.firestore.FieldValue.serverTimestamp()
       });
 
-      const graphClient = await getGraphClient();
-      if (graphClient) {
-        const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '');
-        const registrationLink = `${appUrl}/register/${registrationToken}`;
-        await graphClient.api("/me/sendMail").post({
-          message: {
-            subject: "Welcome to MIS Portal",
-            body: { contentType: "HTML", content: `<p>Welcome ${firstName}! Register here: <a href="${registrationLink}">${registrationLink}</a></p>` },
-            toRecipients: [{ emailAddress: { address: email } }]
-          }
-        });
-      }
-
-      res.json({ id: docRef.id, employeeCode, emailSent: !!graphClient });
+      const emailSent = await sendInvitationEmail(firstName, email, registrationToken);
+      res.json({ id: docRef.id, employeeCode, emailSent });
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }

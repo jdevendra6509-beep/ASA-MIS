@@ -120,12 +120,19 @@ const EditEmployeeModal = ({ employee, onClose, onSave }: { employee: Employee, 
     reportingManager: employee.reportingManager,
   });
   const [partners, setPartners] = useState<any[]>([]);
+  const [managers, setManagers] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    // Fetch active/pending partners for the dropdown
     fetch(`/api/users/by-role/${UserRole.PARTNER}`)
       .then(res => res.json())
       .then(setPartners);
+
+    // Fetch active/pending managers for the dropdown
+    fetch(`/api/users/by-role/${UserRole.MANAGER}`)
+      .then(res => res.json())
+      .then(setManagers);
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -245,12 +252,15 @@ const EditEmployeeModal = ({ employee, onClose, onSave }: { employee: Employee, 
           {!isPartner && !isManager && (
             <div className="space-y-1">
               <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Reporting Manager *</label>
-              <input
+              <select
                 required
-                className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm"
+                className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm bg-white"
                 value={formData.reportingManager}
                 onChange={e => setFormData({ ...formData, reportingManager: e.target.value })}
-              />
+              >
+                <option value="">Select Manager</option>
+                {managers.map(m => <option key={m.id} value={`${m.firstName} ${m.lastName}`}>{m.firstName} {m.lastName}</option>)}
+              </select>
             </div>
           )}
 
@@ -744,7 +754,12 @@ const EmployeeCreation = () => {
     // Fetch active/pending managers for the dropdown
     fetch(`/api/users/by-role/${UserRole.MANAGER}`)
       .then(res => res.json())
-      .then(setManagers);
+      .then(setManagers)
+      .catch(err => console.error('Error fetching managers:', err));
+  };
+
+  useEffect(() => {
+    loadDropdownData();
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -753,9 +768,12 @@ const EmployeeCreation = () => {
     setWarning(null);
     setError(null);
 
-    // Final check for mandatory fields based on role
-    const isPartner = formData.role === UserRole.PARTNER;
-    const isManager = formData.role === UserRole.MANAGER;
+    // Comprehensive validation
+    if (!formData.firstName || !formData.lastName || !formData.email || !formData.designation || !formData.dateOfJoining) {
+      setError("All basic fields (Name, Email, Designation, Date of Joining) are mandatory.");
+      setLoading(false);
+      return;
+    }
 
     if (!isPartner && !formData.reportingPartner) {
       setError("Reporting Partner is mandatory");
@@ -763,17 +781,25 @@ const EmployeeCreation = () => {
       return;
     }
 
-    if (!isPartner && !isManager && !formData.reportingManager) {
-      setError("Reporting Manager is mandatory");
+    if (formData.role === UserRole.EMPLOYEE && !formData.reportingManager) {
+      setError("Reporting Manager is mandatory for Employee role");
       setLoading(false);
       return;
+    }
+
+    const payload = { ...formData };
+    if (isPartner) {
+      payload.reportingPartner = '';
+      payload.reportingManager = '';
+    } else if (isManager) {
+      payload.reportingManager = payload.reportingPartner; // Manager reports to Partner
     }
 
     try {
       const res = await fetch('/api/employees', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (res.ok) {
@@ -1291,6 +1317,29 @@ const RegistrationPage = () => {
     e.preventDefault();
     if (password !== confirmPassword) {
       setError('Passwords do not match');
+      window.scrollTo(0, 0);
+      return;
+    }
+
+    // Comprehensive validation for mandatory fields
+    const requiredRegFields = [
+      'gender', 'dateOfBirth', 'pan', 'aadhaar', 'maritalStatus',
+      'personalEmail', 'personalMobile', 'currentAddress', 'pin',
+      'permanentAddress', 'guardian1Name', 'guardian1Contact',
+      'guardian1Address', 'guardian2Name', 'guardian2Contact',
+      'guardian2Address', 'educationalQualification'
+    ];
+
+    for (const field of requiredRegFields) {
+      if (!(regData as any)[field]) {
+        setError(`${field.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())} is mandatory`);
+        window.scrollTo(0, 0);
+        return;
+      }
+    }
+
+    if (!regData.bankDetails.accountNumber || !regData.bankDetails.ifscCode || !regData.bankDetails.bankName || !regData.bankDetails.branchName) {
+      setError('All Bank Details are mandatory');
       window.scrollTo(0, 0);
       return;
     }
