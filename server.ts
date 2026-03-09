@@ -280,11 +280,7 @@ async function startServer() {
 
   app.get("/api/users/by-role/:role", async (req, res) => {
     const { role } = req.params;
-    // Include both Active and Pending users so they show up in dropdowns during setup
-    const snap = await db.collection('users')
-      .where('role', '==', role)
-      .where('status', 'in', ['Active', 'Pending'])
-      .get();
+    const snap = await db.collection('users').where('role', '==', role).where('status', '==', 'Active').get();
     res.json(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
   });
 
@@ -304,66 +300,6 @@ async function startServer() {
     res.json({ success: true });
   });
 
-  // --- Clients ---
-  app.post("/api/clients", async (req, res) => {
-    try {
-      const clientData = { ...req.body, createdAt: new Date().toISOString() };
-      const docRef = await db.collection('clients').add(clientData);
-      res.status(201).json({ id: docRef.id, ...clientData });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  app.get("/api/clients", async (req, res) => {
-    try {
-      const snap = await db.collection('clients').orderBy('createdAt', 'desc').get();
-      res.json(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  // --- Projects ---
-  app.post("/api/projects", async (req, res) => {
-    try {
-      const projectData = { ...req.body, createdAt: new Date().toISOString() };
-      const docRef = await db.collection('projects').add(projectData);
-      res.status(201).json({ id: docRef.id, ...projectData });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  app.get("/api/projects", async (req, res) => {
-    try {
-      const snap = await db.collection('projects').orderBy('createdAt', 'desc').get();
-      res.json(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  // --- Jobs ---
-  app.post("/api/jobs", async (req, res) => {
-    try {
-      const jobData = { ...req.body, createdAt: new Date().toISOString() };
-      const docRef = await db.collection('jobs').add(jobData);
-      res.status(201).json({ id: docRef.id, ...jobData });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  app.get("/api/jobs", async (req, res) => {
-    try {
-      const snap = await db.collection('jobs').orderBy('createdAt', 'desc').get();
-      res.json(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
   // --- Vite Middleware ---
   const isProd = process.env.NODE_ENV === "production";
   const distPath = path.join(__dirname, "dist");
@@ -372,6 +308,7 @@ async function startServer() {
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
     app.use(vite.middlewares);
   } else {
+    app.use(express.static(distPath));
     app.get("*", (req, res) => res.sendFile(path.join(distPath, "index.html")));
   }
 
