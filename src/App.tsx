@@ -33,8 +33,7 @@ import {
   Slash,
   Send,
   X,
-  Check,
-  RefreshCw
+  Check
 } from 'lucide-react';
 import { UserRole, Employee, DEPARTMENTS } from './types';
 import { cn } from './lib/utils';
@@ -124,7 +123,6 @@ const EditEmployeeModal = ({ employee, onClose, onSave }: { employee: Employee, 
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    // Fetch active/pending partners for the dropdown
     fetch(`/api/users/by-role/${UserRole.PARTNER}`)
       .then(res => res.json())
       .then(setPartners);
@@ -358,12 +356,9 @@ const EmployeeList = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDept, setFilterDept] = useState('All');
   const [filterRole, setFilterRole] = useState('All');
-  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
-  const [feedback, setFeedback] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
   const navigate = useNavigate();
 
-  const loadEmployees = () => {
-    setLoading(true);
+  useEffect(() => {
     fetch('/api/employees')
       .then(res => res.json())
       .then(data => {
@@ -374,46 +369,7 @@ const EmployeeList = () => {
         console.error(err);
         setLoading(false);
       });
-  };
-
-  useEffect(() => {
-    loadEmployees();
   }, []);
-
-  const handleAction = async (employee: Employee, type: 'edit' | 'status' | 'resend') => {
-    if (type === 'edit') {
-      setEditingEmployee(employee);
-    } else if (type === 'status') {
-      const newStatus = employee.status === 'Disabled' ? 'Active' : 'Disabled';
-      try {
-        const res = await fetch(`/api/employees/${employee.id}/toggle-status`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: newStatus }),
-        });
-        if (res.ok) {
-          setEmployees(employees.map(e => e.id === employee.id ? { ...e, status: newStatus } : e));
-          setFeedback({ message: `Employee ${newStatus === 'Active' ? 'enabled' : 'disabled'} successfully`, type: 'success' });
-        }
-      } catch (err) {
-        setFeedback({ message: 'Failed to update status', type: 'error' });
-      }
-    } else if (type === 'resend') {
-      try {
-        const res = await fetch(`/api/employees/${employee.id}/resend-invite`, { method: 'POST' });
-        if (res.ok) {
-          setFeedback({ message: 'Invitation email resent successfully', type: 'success' });
-        } else {
-          const data = await res.json();
-          setFeedback({ message: data.error || 'Failed to resend invite', type: 'error' });
-        }
-      } catch (err) {
-        setFeedback({ message: 'Network error while resending invite', type: 'error' });
-      }
-    }
-
-    if (feedback) setTimeout(() => setFeedback(null), 3000);
-  };
 
   const filteredEmployees = employees.filter(emp => {
     const matchesSearch = (emp.firstName + ' ' + emp.lastName + ' ' + emp.employeeCode).toLowerCase().includes(searchTerm.toLowerCase());
@@ -549,7 +505,9 @@ const EmployeeList = () => {
                       {new Date(emp.dateOfJoining).toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <ActionsMenu employee={emp} onAction={(type) => handleAction(emp, type)} />
+                      <button className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-600 transition-colors">
+                        <MoreHorizontal size={18} />
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -567,27 +525,6 @@ const EmployeeList = () => {
           </div>
         </div>
       </div>
-
-      {editingEmployee && (
-        <EditEmployeeModal
-          employee={editingEmployee}
-          onClose={() => setEditingEmployee(null)}
-          onSave={(updates) => {
-            setEmployees(employees.map(e => e.id === editingEmployee.id ? { ...e, ...updates } : e));
-            setFeedback({ message: 'Employee updated successfully', type: 'success' });
-          }}
-        />
-      )}
-
-      {feedback && (
-        <div className={cn(
-          "fixed bottom-8 right-8 px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300 z-50",
-          feedback.type === 'success' ? "bg-emerald-900 text-white" : "bg-red-900 text-white"
-        )}>
-          {feedback.type === 'success' ? <CheckCircle2 size={20} /> : <AlertCircle size={20} />}
-          <span className="font-medium">{feedback.message}</span>
-        </div>
-      )}
     </div>
   );
 };
@@ -801,16 +738,13 @@ const EmployeeCreation = () => {
     // Fetch active/pending partners for the dropdown
     fetch(`/api/users/by-role/${UserRole.PARTNER}`)
       .then(res => res.json())
-      .then(setPartners);
+      .then(setPartners)
+      .catch(err => console.error('Error fetching partners:', err));
 
     // Fetch active/pending managers for the dropdown
     fetch(`/api/users/by-role/${UserRole.MANAGER}`)
       .then(res => res.json())
       .then(setManagers);
-  };
-
-  useEffect(() => {
-    loadDropdownData();
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -823,37 +757,23 @@ const EmployeeCreation = () => {
     const isPartner = formData.role === UserRole.PARTNER;
     const isManager = formData.role === UserRole.MANAGER;
 
-    if (!formData.firstName || !formData.lastName || !formData.email || !formData.designation || !formData.dateOfJoining) {
-      setError("All basic fields are mandatory.");
-      setLoading(false);
-      return;
-    }
-
     if (!isPartner && !formData.reportingPartner) {
-      setError("Reporting Partner is mandatory.");
+      setError("Reporting Partner is mandatory");
       setLoading(false);
       return;
     }
 
     if (!isPartner && !isManager && !formData.reportingManager) {
-      setError("Reporting Manager is mandatory.");
+      setError("Reporting Manager is mandatory");
       setLoading(false);
       return;
-    }
-
-    const payload = { ...formData };
-    if (isPartner) {
-      payload.reportingPartner = '';
-      payload.reportingManager = '';
-    } else if (isManager) {
-      payload.reportingManager = payload.reportingPartner;
     }
 
     try {
       const res = await fetch('/api/employees', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(formData),
       });
       const data = await res.json();
       if (res.ok) {
@@ -1017,14 +937,17 @@ const EmployeeCreation = () => {
             {!isPartner && !isManager && (
               <div className="space-y-2">
                 <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Reporting Manager *</label>
-                <input
+                <select
                   required
-                  type="text"
-                  placeholder="Enter Reporting Manager Name"
                   className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
                   value={formData.reportingManager}
                   onChange={e => setFormData({ ...formData, reportingManager: e.target.value })}
-                />
+                >
+                  <option value="">Select Manager</option>
+                  {managers.map(m => (
+                    <option key={m.id} value={`${m.firstName} ${m.lastName}`}>{m.firstName} {m.lastName}</option>
+                  ))}
+                </select>
               </div>
             )}
           </div>
@@ -1372,29 +1295,7 @@ const RegistrationPage = () => {
       return;
     }
 
-    // Comprehensive validation for mandatory fields
-    const requiredRegFields = [
-      'gender', 'dateOfBirth', 'pan', 'aadhaar', 'maritalStatus',
-      'personalEmail', 'personalMobile', 'currentAddress', 'pin',
-      'permanentAddress', 'guardian1Name', 'guardian1Contact',
-      'guardian1Address', 'guardian2Name', 'guardian2Contact',
-      'guardian2Address', 'educationalQualification'
-    ];
-
-    for (const field of requiredRegFields) {
-      if (!(regData as any)[field]) {
-        setError(`${field.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())} is mandatory`);
-        window.scrollTo(0, 0);
-        return;
-      }
-    }
-
-    if (!regData.bankDetails.accountNumber || !regData.bankDetails.ifscCode || !regData.bankDetails.bankName || !regData.bankDetails.branchName) {
-      setError('All Bank Details are mandatory');
-      window.scrollTo(0, 0);
-      return;
-    }
-
+    // Basic validation for attachments
     if (!attachments.employeePhoto || !attachments.panAttachment || !attachments.aadhaarAttachment || !attachments.chequeBookAttachment) {
       setError('All attachments are mandatory');
       window.scrollTo(0, 0);
