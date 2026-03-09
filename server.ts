@@ -184,7 +184,25 @@ async function startServer() {
       });
       if (response) {
         await db.collection('settings').doc('outlook_token').set(JSON.parse(JSON.stringify(response)));
-        res.send(`<html><body><script>window.opener.postMessage({type:'OUTLOOK_AUTH_SUCCESS'},'*');window.close();</script></body></html>`);
+        res.send(`
+          <html>
+            <body>
+              <script>
+                try {
+                  if (window.opener) {
+                    window.opener.postMessage({type:'OUTLOOK_AUTH_SUCCESS'}, '*');
+                    window.close();
+                  } else {
+                    document.body.innerHTML = "<h1>Connected Successfully!</h1><p>You can close this window and refresh the settings page.</p>";
+                  }
+                } catch (e) {
+                  console.error("PostMessage failed", e);
+                  document.body.innerHTML = "<h1>Connected Successfully!</h1><p>You can close this window and refresh the settings page.</p>";
+                }
+              </script>
+            </body>
+          </html>
+        `);
       }
     } catch (error: any) {
       res.status(500).send(`Auth Failed: ${error.message}`);
@@ -310,7 +328,11 @@ async function startServer() {
 
   app.get("/api/users/by-role/:role", async (req, res) => {
     const { role } = req.params;
-    const snap = await db.collection('users').where('role', '==', role).where('status', '==', 'Active').get();
+    // Include both Active and Pending users so they show up in dropdowns during setup
+    const snap = await db.collection('users')
+      .where('role', '==', role)
+      .where('status', 'in', ['Active', 'Pending'])
+      .get();
     res.json(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
   });
 
