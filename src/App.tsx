@@ -28,12 +28,7 @@ import {
   MapPin,
   Phone,
   Calendar,
-  FileText,
-  Edit2,
-  Slash,
-  Send,
-  X,
-  Check
+  FileText
 } from 'lucide-react';
 import { UserRole, Employee, DEPARTMENTS } from './types';
 import { cn } from './lib/utils';
@@ -744,14 +739,14 @@ const EmployeeCreation = () => {
   const [warning, setWarning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const loadDropdownData = () => {
-    // Fetch active/pending partners for the dropdown
+  useEffect(() => {
+    // Fetch active partners for the dropdown
     fetch(`/api/users/by-role/${UserRole.PARTNER}`)
       .then(res => res.json())
       .then(setPartners)
       .catch(err => console.error('Error fetching partners:', err));
 
-    // Fetch active/pending managers for the dropdown
+    // Fetch active managers for the dropdown
     fetch(`/api/users/by-role/${UserRole.MANAGER}`)
       .then(res => res.json())
       .then(setManagers)
@@ -760,29 +755,39 @@ const EmployeeCreation = () => {
 
   useEffect(() => {
     loadDropdownData();
-  }, []);
+      .then(setManagers)
+    .catch(err => console.error('Error fetching managers:', err));
+}, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setWarning(null);
-    setError(null);
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  setLoading(true);
+  setWarning(null);
+  setError(null);
 
-    // Comprehensive validation
-    if (!formData.firstName || !formData.lastName || !formData.email || !formData.designation || !formData.dateOfJoining) {
-      setError("All basic fields (Name, Email, Designation, Date of Joining) are mandatory.");
-      setLoading(false);
-      return;
-    }
+  // Comprehensive validation
+  if (!formData.firstName || !formData.lastName || !formData.email || !formData.designation || !formData.dateOfJoining) {
+    setError("All basic fields (Name, Email, Designation, Date of Joining) are mandatory.");
+    setLoading(false);
+    return;
+  }
 
-    if (!isPartner && !formData.reportingPartner) {
-      setError("Reporting Partner is mandatory");
-      setLoading(false);
-      return;
-    }
 
-    if (formData.role === UserRole.EMPLOYEE && !formData.reportingManager) {
-      setError("Reporting Manager is mandatory for Employee role");
+  // Final check for mandatory fields based on role
+  const isPartner = formData.role === UserRole.PARTNER;
+  const isManager = formData.role === UserRole.MANAGER;
+
+  if (!isPartner && !formData.reportingPartner) {
+    setError("Reporting Partner is mandatory");
+    setLoading(false);
+    return;
+  }
+
+  if (formData.role === UserRole.EMPLOYEE && !formData.reportingManager) {
+    setError("Reporting Manager is mandatory for Employee role");
+
+    if (!isPartner && !isManager && !formData.reportingManager) {
+      setError("Reporting Manager is mandatory");
       setLoading(false);
       return;
     }
@@ -935,17 +940,7 @@ const EmployeeCreation = () => {
 
             {!isPartner && (
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Reporting Partner *</label>
-                  <button
-                    type="button"
-                    onClick={loadDropdownData}
-                    className="p-1 hover:bg-zinc-100 rounded text-zinc-400"
-                    title="Refresh List"
-                  >
-                    <RefreshCw size={12} />
-                  </button>
-                </div>
+                <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Reporting Partner *</label>
                 <select
                   required
                   className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
@@ -1019,16 +1014,10 @@ const SettingsPage = () => {
   const [outlookStatus, setOutlookStatus] = useState<{ connected: boolean; account?: string } | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const refreshStatus = () => {
-    setLoading(true);
+  useEffect(() => {
     fetch('/api/settings/outlook')
       .then(res => res.json())
-      .then(setOutlookStatus)
-      .finally(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    refreshStatus();
+      .then(setOutlookStatus);
   }, []);
 
   const handleConnectOutlook = async () => {
@@ -1052,9 +1041,10 @@ const SettingsPage = () => {
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      // Allow messages from any origin during development, or check specific ones
       if (event.data?.type === 'OUTLOOK_AUTH_SUCCESS') {
-        refreshStatus();
+        fetch('/api/settings/outlook')
+          .then(res => res.json())
+          .then(setOutlookStatus);
       }
     };
     window.addEventListener('message', handleMessage);
@@ -1079,19 +1069,6 @@ const SettingsPage = () => {
                   <div>
                     <p className="text-sm font-semibold text-emerald-900">Connected to Outlook</p>
                     <p className="text-xs text-emerald-700">{outlookStatus.account}</p>
-                    <div className="flex items-center gap-4 mt-2">
-                      <div className="px-3 py-1 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-full border border-emerald-100 flex items-center gap-1.5 slice-in-from-right-4 animate-in fade-in">
-                        <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
-                        Connected
-                      </div>
-                      <button
-                        onClick={refreshStatus}
-                        className="text-xs text-zinc-500 hover:text-zinc-900 flex items-center gap-1"
-                      >
-                        <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
-                        Refresh
-                      </button>
-                    </div>
                   </div>
                 </div>
                 <button
