@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useParams, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useParams, Navigate, useLocation } from 'react-router-dom';
 import {
   Users,
   Settings,
@@ -28,9 +28,18 @@ import {
   MapPin,
   Phone,
   Calendar,
-  FileText
+  FileText,
+  RefreshCw,
+  X,
+  Edit2,
+  Slash,
+  Send,
+  Check,
+  Building2,
+  FolderKanban,
+  ClipboardList
 } from 'lucide-react';
-import { UserRole, Employee, DEPARTMENTS } from './types';
+import { UserRole, Employee, DEPARTMENTS, ProjectStatus, JobStatus, JobPriority } from './types';
 import { cn } from './lib/utils';
 import { GoogleGenAI } from "@google/genai";
 
@@ -42,11 +51,14 @@ const ai = new (GoogleGenAI as any)({
 // --- Components ---
 
 const Sidebar = ({ onLogout }: { onLogout: () => void }) => {
-  const location = window.location.pathname;
+  const { pathname } = useLocation();
 
   const menuItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
     { icon: UserPlus, label: 'Employee Creation', path: '/employees/create' },
+    { icon: Building2, label: 'Client Creation', path: '/clients/create' },
+    { icon: FolderKanban, label: 'Project Creation', path: '/projects/create' },
+    { icon: ClipboardList, label: 'Job Creation', path: '/jobs/create' },
     { icon: Users, label: 'Employee List', path: '/employees' },
     { icon: Settings, label: 'System Setup', path: '/settings' },
   ];
@@ -64,12 +76,12 @@ const Sidebar = ({ onLogout }: { onLogout: () => void }) => {
             to={item.path}
             className={cn(
               "flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 group",
-              location === item.path
+              pathname === item.path
                 ? "bg-zinc-800 text-white"
                 : "hover:bg-zinc-900 hover:text-zinc-200"
             )}
           >
-            <item.icon size={18} className={cn(location === item.path ? "text-emerald-400" : "group-hover:text-emerald-400")} />
+            <item.icon size={18} className={cn(pathname === item.path ? "text-emerald-400" : "group-hover:text-emerald-400")} />
             <span className="text-sm font-medium">{item.label}</span>
           </Link>
         ))}
@@ -739,14 +751,14 @@ const EmployeeCreation = () => {
   const [warning, setWarning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    // Fetch active partners for the dropdown
+  const loadDropdownData = () => {
+    // Fetch active/pending partners for the dropdown
     fetch(`/api/users/by-role/${UserRole.PARTNER}`)
       .then(res => res.json())
       .then(setPartners)
       .catch(err => console.error('Error fetching partners:', err));
 
-    // Fetch active managers for the dropdown
+    // Fetch active/pending managers for the dropdown
     fetch(`/api/users/by-role/${UserRole.MANAGER}`)
       .then(res => res.json())
       .then(setManagers)
@@ -755,48 +767,41 @@ const EmployeeCreation = () => {
 
   useEffect(() => {
     loadDropdownData();
-      .then(setManagers)
-    .catch(err => console.error('Error fetching managers:', err));
-}, []);
+  }, []);
 
-const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setLoading(true);
-  setWarning(null);
-  setError(null);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setWarning(null);
+    setError(null);
 
-  // Comprehensive validation
-  if (!formData.firstName || !formData.lastName || !formData.email || !formData.designation || !formData.dateOfJoining) {
-    setError("All basic fields (Name, Email, Designation, Date of Joining) are mandatory.");
-    setLoading(false);
-    return;
-  }
+    // Comprehensive validation
+    if (!formData.firstName || !formData.lastName || !formData.email || !formData.designation || !formData.dateOfJoining) {
+      setError("All basic fields (Name, Email, Designation, Date of Joining) are mandatory.");
+      setLoading(false);
+      return;
+    }
 
+    const isCPartner = formData.role === UserRole.PARTNER;
+    const isCManager = formData.role === UserRole.MANAGER;
 
-  // Final check for mandatory fields based on role
-  const isPartner = formData.role === UserRole.PARTNER;
-  const isManager = formData.role === UserRole.MANAGER;
+    if (!isCPartner && !formData.reportingPartner) {
+      setError("Reporting Partner is mandatory");
+      setLoading(false);
+      return;
+    }
 
-  if (!isPartner && !formData.reportingPartner) {
-    setError("Reporting Partner is mandatory");
-    setLoading(false);
-    return;
-  }
-
-  if (formData.role === UserRole.EMPLOYEE && !formData.reportingManager) {
-    setError("Reporting Manager is mandatory for Employee role");
-
-    if (!isPartner && !isManager && !formData.reportingManager) {
-      setError("Reporting Manager is mandatory");
+    if (formData.role === UserRole.EMPLOYEE && !formData.reportingManager) {
+      setError("Reporting Manager is mandatory for Employee role");
       setLoading(false);
       return;
     }
 
     const payload = { ...formData };
-    if (isPartner) {
+    if (isCPartner) {
       payload.reportingPartner = '';
       payload.reportingManager = '';
-    } else if (isManager) {
+    } else if (isCManager) {
       payload.reportingManager = payload.reportingPartner; // Manager reports to Partner
     }
 
@@ -1004,6 +1009,288 @@ const handleSubmit = async (e: React.FormEvent) => {
               </button>
             </div>
           </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+const ClientCreation = () => {
+  const [formData, setFormData] = useState({ name: '', email: '', phone: '', address: '', gstNumber: '', panNumber: '' });
+  const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/clients', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
+      if (res.ok) {
+        setSuccess(true);
+        setFormData({ name: '', email: '', phone: '', address: '', gstNumber: '', panNumber: '' });
+        setTimeout(() => setSuccess(false), 5000);
+      } else {
+        const data = await res.json();
+        setError(data.error || "Failed to create client");
+      }
+    } catch (err) {
+      setError("Network error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="p-8 max-w-4xl">
+      <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-zinc-100 bg-zinc-50/50 flex items-center gap-3">
+          <div className="p-2 bg-zinc-100 rounded-lg text-zinc-600">
+            <Building2 size={20} />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-zinc-900">Client Creation</h3>
+            <p className="text-sm text-zinc-500">Register a new client in the system.</p>
+          </div>
+        </div>
+        <form onSubmit={handleSubmit} className="p-8 space-y-6">
+          {error && <div className="p-4 bg-red-50 text-red-700 rounded-xl text-sm flex items-center gap-2"><AlertCircle size={18} />{error}</div>}
+          {success && <div className="p-4 bg-emerald-50 text-emerald-700 rounded-xl text-sm flex items-center gap-2"><CheckCircle2 size={18} />Client created successfully!</div>}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Client Name *</label>
+              <input required className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Email ID *</label>
+              <input required type="email" className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Phone Number *</label>
+              <input required className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">GST Number</label>
+              <input className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" value={formData.gstNumber} onChange={e => setFormData({ ...formData, gstNumber: e.target.value.toUpperCase() })} />
+            </div>
+            <div className="md:col-span-2 space-y-2">
+              <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Address *</label>
+              <textarea required className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" rows={3} value={formData.address} onChange={e => setFormData({ ...formData, address: e.target.value })} />
+            </div>
+          </div>
+          <button disabled={loading} type="submit" className="px-8 py-3 bg-zinc-900 text-white rounded-xl font-semibold hover:bg-zinc-800 transition-all flex items-center gap-2 shadow-xl shadow-zinc-200">
+            {loading && <Loader2 size={18} className="animate-spin" />}
+            Create Client
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+const ProjectCreation = () => {
+  const [formData, setFormData] = useState({ name: '', description: '', clientId: '', clientName: '', managerId: '', managerName: '', startDate: '', status: ProjectStatus.NOT_STARTED });
+  const [clients, setClients] = useState<any[]>([]);
+  const [managers, setManagers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/clients').then(res => res.json()).then(setClients);
+    fetch(`/api/users/by-role/${UserRole.MANAGER}`).then(res => res.json()).then(setManagers);
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
+      if (res.ok) {
+        setSuccess(true);
+        setFormData({ name: '', description: '', clientId: '', clientName: '', managerId: '', managerName: '', startDate: '', status: ProjectStatus.NOT_STARTED });
+        setTimeout(() => setSuccess(false), 5000);
+      } else {
+        const data = await res.json();
+        setError(data.error || "Failed to create project");
+      }
+    } catch (err) {
+      setError("Network error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="p-8 max-w-4xl">
+      <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-zinc-100 bg-zinc-50/50 flex items-center gap-3">
+          <div className="p-2 bg-zinc-100 rounded-lg text-zinc-600">
+            <FolderKanban size={20} />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-zinc-900">Project Creation</h3>
+            <p className="text-sm text-zinc-500">Create a new project and assign a manager.</p>
+          </div>
+        </div>
+        <form onSubmit={handleSubmit} className="p-8 space-y-6">
+          {error && <div className="p-4 bg-red-50 text-red-700 rounded-xl text-sm flex items-center gap-2"><AlertCircle size={18} />{error}</div>}
+          {success && <div className="p-4 bg-emerald-50 text-emerald-700 rounded-xl text-sm flex items-center gap-2"><CheckCircle2 size={18} />Project created successfully!</div>}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Project Name *</label>
+              <input required className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Client *</label>
+              <select required className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none bg-white focus:ring-2 focus:ring-zinc-500/10" value={formData.clientId} onChange={e => {
+                const client = clients.find(c => c.id === e.target.value);
+                setFormData({ ...formData, clientId: e.target.value, clientName: client?.name || '' });
+              }}>
+                <option value="">Select Client</option>
+                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Project Manager *</label>
+              <select required className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none bg-white focus:ring-2 focus:ring-zinc-500/10" value={formData.managerId} onChange={e => {
+                const mgr = managers.find(m => m.id === e.target.value);
+                setFormData({ ...formData, managerId: e.target.value, managerName: `${mgr?.firstName} ${mgr?.lastName}` });
+              }}>
+                <option value="">Select Manager</option>
+                {managers.map(m => <option key={m.id} value={m.id}>{m.firstName} {m.lastName}</option>)}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Start Date *</label>
+              <input required type="date" className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" value={formData.startDate} onChange={e => setFormData({ ...formData, startDate: e.target.value })} />
+            </div>
+            <div className="md:col-span-2 space-y-2">
+              <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Description</label>
+              <textarea className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" rows={2} value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} />
+            </div>
+          </div>
+          <button disabled={loading} type="submit" className="px-8 py-3 bg-zinc-900 text-white rounded-xl font-semibold hover:bg-zinc-800 transition-all flex items-center gap-2 shadow-xl shadow-zinc-200">
+            {loading && <Loader2 size={18} className="animate-spin" />}
+            Create Project
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+const JobCreation = () => {
+  const [formData, setFormData] = useState({ title: '', description: '', projectId: '', projectName: '', assigneeId: '', assigneeName: '', dueDate: '', status: JobStatus.OPEN, priority: JobPriority.MEDIUM });
+  const [projects, setProjects] = useState<any[]>([]);
+  const [employees, setEmployees] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/projects').then(res => res.json()).then(setProjects);
+    // Fetch all users to allow assigning to anyone (could filter by role if needed)
+    fetch('/api/employees').then(res => res.json()).then(setEmployees);
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
+      if (res.ok) {
+        setSuccess(true);
+        setFormData({ title: '', description: '', projectId: '', projectName: '', assigneeId: '', assigneeName: '', dueDate: '', status: JobStatus.OPEN, priority: JobPriority.MEDIUM });
+        setTimeout(() => setSuccess(false), 5000);
+      } else {
+        const data = await res.json();
+        setError(data.error || "Failed to create job");
+      }
+    } catch (err) {
+      setError("Network error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="p-8 max-w-4xl">
+      <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-zinc-100 bg-zinc-50/50 flex items-center gap-3">
+          <div className="p-2 bg-zinc-100 rounded-lg text-zinc-600">
+            <ClipboardList size={20} />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-zinc-900">Job Creation</h3>
+            <p className="text-sm text-zinc-500">Assign a new task (job) under a project.</p>
+          </div>
+        </div>
+        <form onSubmit={handleSubmit} className="p-8 space-y-6">
+          {error && <div className="p-4 bg-red-50 text-red-700 rounded-xl text-sm flex items-center gap-2"><AlertCircle size={18} />{error}</div>}
+          {success && <div className="p-4 bg-emerald-50 text-emerald-700 rounded-xl text-sm flex items-center gap-2"><CheckCircle2 size={18} />Job created successfully!</div>}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Job Title *</label>
+              <input required className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" value={formData.title} onChange={e => setFormData({ ...formData, title: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Project *</label>
+              <select required className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none bg-white focus:ring-2 focus:ring-zinc-500/10" value={formData.projectId} onChange={e => {
+                const project = projects.find(p => p.id === e.target.value);
+                setFormData({ ...formData, projectId: e.target.value, projectName: project?.name || '' });
+              }}>
+                <option value="">Select Project</option>
+                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Assign To *</label>
+              <select required className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none bg-white focus:ring-2 focus:ring-zinc-500/10" value={formData.assigneeId} onChange={e => {
+                const emp = employees.find(emp => (emp.id || emp.employeeCode) === e.target.value);
+                setFormData({ ...formData, assigneeId: e.target.value, assigneeName: emp ? `${emp.firstName} ${emp.lastName}` : '' });
+              }}>
+                <option value="">Select Employee</option>
+                {employees.map(emp => <option key={emp.id || emp.employeeCode} value={emp.id || emp.employeeCode}>{emp.firstName} {emp.lastName}</option>)}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Due Date *</label>
+              <input required type="date" className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" value={formData.dueDate} onChange={e => setFormData({ ...formData, dueDate: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Priority *</label>
+              <select required className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none bg-white focus:ring-2 focus:ring-zinc-500/10" value={formData.priority} onChange={e => setFormData({ ...formData, priority: e.target.value as JobPriority })}>
+                {Object.values(JobPriority).map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+            <div className="md:col-span-2 space-y-2">
+              <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Description</label>
+              <textarea className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" rows={2} value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} />
+            </div>
+          </div>
+          <button disabled={loading} type="submit" className="px-8 py-3 bg-zinc-900 text-white rounded-xl font-semibold hover:bg-zinc-800 transition-all flex items-center gap-2 shadow-xl shadow-zinc-200">
+            {loading && <Loader2 size={18} className="animate-spin" />}
+            Create Job
+          </button>
         </form>
       </div>
     </div>
@@ -1935,6 +2222,24 @@ export default function App() {
                     <>
                       <Header title="Employee Creation" user={user} />
                       <EmployeeCreation />
+                    </>
+                  } />
+                  <Route path="/clients/create" element={
+                    <>
+                      <Header title="Client Creation" user={user} />
+                      <ClientCreation />
+                    </>
+                  } />
+                  <Route path="/projects/create" element={
+                    <>
+                      <Header title="Project Creation" user={user} />
+                      <ProjectCreation />
+                    </>
+                  } />
+                  <Route path="/jobs/create" element={
+                    <>
+                      <Header title="Job Creation" user={user} />
+                      <JobCreation />
                     </>
                   } />
                   <Route path="/settings" element={
