@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useParams, Navigate } from 'react-router-dom';
-import {
-  Users,
-  Settings,
-  Mail,
-  LayoutDashboard,
-  UserPlus,
+import { 
+  Users, 
+  Settings, 
+  Mail, 
+  LayoutDashboard, 
+  UserPlus, 
   LogOut,
   CheckCircle2,
   AlertCircle,
@@ -28,18 +28,13 @@ import {
   MapPin,
   Phone,
   Calendar,
-  FileText,
-  Edit2,
-  Slash,
-  Send,
-  X,
-  Check
+  FileText
 } from 'lucide-react';
 import { UserRole, Employee, DEPARTMENTS } from './types';
 import { cn } from './lib/utils';
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new (GoogleGenAI as any)({
+const ai = new (GoogleGenAI as any)({ 
   apiKey: process.env.GEMINI_API_KEY || "",
   fetch: (...args: any[]) => (window.fetch as any)(...args)
 });
@@ -48,7 +43,7 @@ const ai = new (GoogleGenAI as any)({
 
 const Sidebar = ({ onLogout }: { onLogout: () => void }) => {
   const location = window.location.pathname;
-
+  
   const menuItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
     { icon: UserPlus, label: 'Employee Creation', path: '/employees/create' },
@@ -69,8 +64,8 @@ const Sidebar = ({ onLogout }: { onLogout: () => void }) => {
             to={item.path}
             className={cn(
               "flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 group",
-              location === item.path
-                ? "bg-zinc-800 text-white"
+              location === item.path 
+                ? "bg-zinc-800 text-white" 
                 : "hover:bg-zinc-900 hover:text-zinc-200"
             )}
           >
@@ -80,7 +75,7 @@ const Sidebar = ({ onLogout }: { onLogout: () => void }) => {
         ))}
       </nav>
       <div className="p-4 border-t border-zinc-800">
-        <button
+        <button 
           onClick={onLogout}
           className="flex items-center gap-3 px-4 py-3 w-full text-left hover:text-red-400 transition-colors"
         >
@@ -108,247 +103,6 @@ const Header = ({ title, user }: { title: string, user: any }) => (
 );
 
 // --- Pages ---
-
-const EditEmployeeModal = ({ employee, onClose, onSave }: { employee: Employee, onClose: () => void, onSave: (updates: Partial<Employee>) => void }) => {
-  const [formData, setFormData] = useState({
-    firstName: employee.firstName,
-    lastName: employee.lastName,
-    designation: employee.designation,
-    department: employee.department,
-    role: employee.role,
-    reportingPartner: employee.reportingPartner,
-    reportingManager: employee.reportingManager,
-  });
-  const [partners, setPartners] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    fetch(`/api/users/by-role/${UserRole.PARTNER}`)
-      .then(res => res.json())
-      .then(setPartners);
-  }, []);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-
-    const updates = { ...formData };
-    if (updates.role === UserRole.PARTNER) {
-      updates.reportingPartner = '';
-      updates.reportingManager = '';
-    } else if (updates.role === UserRole.MANAGER) {
-      updates.reportingManager = updates.reportingPartner;
-    }
-
-    try {
-      const res = await fetch(`/api/employees/${employee.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates),
-      });
-      if (res.ok) {
-        onSave(updates);
-        onClose();
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const isPartner = formData.role === UserRole.PARTNER;
-  const isManager = formData.role === UserRole.MANAGER;
-
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
-        <div className="px-8 py-6 border-b border-zinc-100 flex items-center justify-between flex-shrink-0">
-          <h3 className="text-xl font-bold text-zinc-900">Edit Employee</h3>
-          <button onClick={onClose} className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-400">
-            <X size={20} />
-          </button>
-        </div>
-        <form onSubmit={handleSubmit} className="p-8 space-y-4 overflow-y-auto">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">First Name *</label>
-              <input
-                required
-                className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm"
-                value={formData.firstName}
-                onChange={e => setFormData({ ...formData, firstName: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Last Name *</label>
-              <input
-                required
-                className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm"
-                value={formData.lastName}
-                onChange={e => setFormData({ ...formData, lastName: e.target.value })}
-              />
-            </div>
-          </div>
-          <div className="space-y-1">
-            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Designation *</label>
-            <input
-              required
-              className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm"
-              value={formData.designation}
-              onChange={e => setFormData({ ...formData, designation: e.target.value })}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Department *</label>
-              <select
-                required
-                className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm bg-white"
-                value={formData.department}
-                onChange={e => setFormData({ ...formData, department: e.target.value })}
-              >
-                {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
-              </select>
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Software Role *</label>
-              <select
-                required
-                className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm bg-white"
-                value={formData.role}
-                onChange={e => {
-                  const newRole = e.target.value as UserRole;
-                  setFormData({ ...formData, role: newRole });
-                }}
-              >
-                {Object.values(UserRole).map(r => <option key={r} value={r}>{r}</option>)}
-              </select>
-            </div>
-          </div>
-
-          {!isPartner && (
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Reporting Partner *</label>
-              <select
-                required
-                className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm bg-white"
-                value={formData.reportingPartner}
-                onChange={e => setFormData({ ...formData, reportingPartner: e.target.value })}
-              >
-                <option value="">Select Partner</option>
-                {partners.map(p => <option key={p.id} value={`${p.firstName} ${p.lastName}`}>{p.firstName} {p.lastName}</option>)}
-              </select>
-            </div>
-          )}
-
-          {!isPartner && !isManager && (
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Reporting Manager *</label>
-              <input
-                required
-                className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm"
-                value={formData.reportingManager}
-                onChange={e => setFormData({ ...formData, reportingManager: e.target.value })}
-              />
-            </div>
-          )}
-
-          <div className="pt-6 flex gap-3 flex-shrink-0">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 py-3 text-zinc-600 font-semibold hover:bg-zinc-50 rounded-xl transition-all"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="flex-1 py-3 bg-zinc-900 text-white font-semibold rounded-xl hover:bg-zinc-800 transition-all shadow-xl shadow-zinc-200 flex items-center justify-center gap-2"
-            >
-              {loading && <Loader2 size={18} className="animate-spin" />}
-              Save Changes
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-};
-
-const ActionsMenu = ({ employee, onAction }: { employee: Employee, onAction: (type: 'edit' | 'status' | 'resend') => void }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const menuRef = React.useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  return (
-    <div className="relative" ref={menuRef}>
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className={cn(
-          "p-2 rounded-lg transition-colors border",
-          isOpen ? "bg-zinc-100 text-zinc-900 border-zinc-300" : "text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 border-transparent"
-        )}
-      >
-        <MoreHorizontal size={18} />
-      </button>
-
-      {isOpen && (
-        <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-2xl border border-zinc-100 py-2 z-20 animate-in fade-in zoom-in duration-200 origin-top-right">
-          <button
-            onClick={() => { onAction('edit'); setIsOpen(false); }}
-            className="w-full px-4 py-2.5 text-left text-sm text-zinc-700 hover:bg-zinc-50 flex items-center gap-3"
-          >
-            <Edit2 size={16} className="text-zinc-400" />
-            <span>Edit Details</span>
-          </button>
-
-          {employee.status !== 'Active' && employee.status !== 'Disabled' && (
-            <button
-              onClick={() => { onAction('resend'); setIsOpen(false); }}
-              className="w-full px-4 py-2.5 text-left text-sm text-emerald-600 hover:bg-emerald-50 flex items-center gap-3"
-            >
-              <Send size={16} />
-              <span>Resend Invite</span>
-            </button>
-          )}
-
-          <div className="my-1 border-t border-zinc-100" />
-
-          <button
-            onClick={() => { onAction('status'); setIsOpen(false); }}
-            className={cn(
-              "w-full px-4 py-2.5 text-left text-sm flex items-center gap-3",
-              employee.status === 'Disabled' ? "text-emerald-600 hover:bg-emerald-50" : "text-red-600 hover:bg-red-50"
-            )}
-          >
-            {employee.status === 'Disabled' ? (
-              <>
-                <Check size={16} />
-                <span>Enable Account</span>
-              </>
-            ) : (
-              <>
-                <Slash size={16} />
-                <span>Disable Account</span>
-              </>
-            )}
-          </button>
-        </div>
-      )}
-    </div>
-  );
-};
 
 const EmployeeList = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -385,7 +139,7 @@ const EmployeeList = () => {
           <h3 className="text-2xl font-bold text-zinc-900">Employee Directory</h3>
           <p className="text-zinc-500 text-sm">Manage and view all registered employees in the system.</p>
         </div>
-        <button
+        <button 
           onClick={() => navigate('/employees/create')}
           className="flex items-center gap-2 px-6 py-3 bg-zinc-900 text-white rounded-xl font-semibold hover:bg-zinc-800 transition-all shadow-lg shadow-zinc-200"
         >
@@ -398,18 +152,18 @@ const EmployeeList = () => {
       <div className="bg-white p-4 rounded-2xl border border-zinc-200 shadow-sm mb-6 flex flex-wrap items-center gap-4">
         <div className="flex-1 min-w-[300px] relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-          <input
-            type="text"
-            placeholder="Search by name or employee code..."
+          <input 
+            type="text" 
+            placeholder="Search by name or employee code..." 
             className="w-full pl-12 pr-4 py-2.5 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-
+        
         <div className="flex items-center gap-2">
           <Filter size={16} className="text-zinc-400" />
-          <select
+          <select 
             className="px-4 py-2.5 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm bg-white"
             value={filterDept}
             onChange={(e) => setFilterDept(e.target.value)}
@@ -422,7 +176,7 @@ const EmployeeList = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          <select
+          <select 
             className="px-4 py-2.5 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm bg-white"
             value={filterRole}
             onChange={(e) => setFilterRole(e.target.value)}
@@ -494,8 +248,8 @@ const EmployeeList = () => {
                     <td className="px-6 py-4">
                       <span className={cn(
                         "text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-full",
-                        emp.status === 'Active'
-                          ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
+                        emp.status === 'Active' 
+                          ? "bg-emerald-50 text-emerald-700 border border-emerald-100" 
                           : "bg-amber-50 text-amber-700 border border-amber-100"
                       )}>
                         {emp.status || 'Pending'}
@@ -560,7 +314,7 @@ const Dashboard = () => {
           </div>
         ))}
       </div>
-
+      
       <AIInsights employees={employees} />
     </div>
   );
@@ -605,13 +359,13 @@ const AIInsights = ({ employees }: { employees: Employee[] }) => {
             <p className="text-zinc-400 text-xs">Powered by Gemini 2.0 Flash</p>
           </div>
         </div>
-
+        
         {insight ? (
           <div className="prose prose-invert max-w-none">
             <div className="text-zinc-300 text-sm leading-relaxed whitespace-pre-line">
               {insight}
             </div>
-            <button
+            <button 
               onClick={() => setInsight('')}
               className="mt-6 text-xs font-bold uppercase tracking-widest text-emerald-400 hover:text-emerald-300 transition-colors"
             >
@@ -621,7 +375,7 @@ const AIInsights = ({ employees }: { employees: Employee[] }) => {
         ) : (
           <div className="flex flex-col items-start gap-4">
             <p className="text-zinc-400 text-sm">Generate real-time organizational analysis based on your current workforce data.</p>
-            <button
+            <button 
               onClick={generateInsight}
               disabled={loading || employees.length === 0}
               className="px-6 py-2.5 bg-white text-zinc-900 rounded-xl font-bold text-sm hover:bg-zinc-200 transition-all disabled:opacity-50"
@@ -659,7 +413,7 @@ const PermissionsManager = () => {
         body: JSON.stringify({ role, permission, enabled: !current }),
       });
       if (res.ok) {
-        setPermissions(prev => prev.map(p =>
+        setPermissions(prev => prev.map(p => 
           (p.role === role && p.permission === permission) ? { ...p, enabled: !current ? 1 : 0 } : p
         ));
       }
@@ -692,7 +446,7 @@ const PermissionsManager = () => {
                 const isEnabled = p?.enabled === 1;
                 return (
                   <td key={role} className="py-4 px-4 text-center">
-                    <button
+                    <button 
                       onClick={() => togglePermission(role, perm, isEnabled)}
                       className={cn(
                         "w-10 h-5 rounded-full transition-all relative",
@@ -734,17 +488,18 @@ const EmployeeCreation = () => {
   const [warning, setWarning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const loadDropdownData = () => {
-    // Fetch active/pending partners for the dropdown
+  useEffect(() => {
+    // Fetch active partners for the dropdown
     fetch(`/api/users/by-role/${UserRole.PARTNER}`)
       .then(res => res.json())
       .then(setPartners)
       .catch(err => console.error('Error fetching partners:', err));
 
-    // Fetch active/pending managers for the dropdown
+    // Fetch active managers for the dropdown
     fetch(`/api/users/by-role/${UserRole.MANAGER}`)
       .then(res => res.json())
-      .then(setManagers);
+      .then(setManagers)
+      .catch(err => console.error('Error fetching managers:', err));
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -752,17 +507,17 @@ const EmployeeCreation = () => {
     setLoading(true);
     setWarning(null);
     setError(null);
-
+    
     // Final check for mandatory fields based on role
     const isPartner = formData.role === UserRole.PARTNER;
     const isManager = formData.role === UserRole.MANAGER;
-
+    
     if (!isPartner && !formData.reportingPartner) {
       setError("Reporting Partner is mandatory");
       setLoading(false);
       return;
     }
-
+    
     if (!isPartner && !isManager && !formData.reportingManager) {
       setError("Reporting Manager is mandatory");
       setLoading(false);
@@ -819,7 +574,7 @@ const EmployeeCreation = () => {
               <span>{error}</span>
             </div>
           )}
-
+          
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
               <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">First Name *</label>
@@ -879,8 +634,8 @@ const EmployeeCreation = () => {
                 value={formData.role}
                 onChange={e => {
                   const newRole = e.target.value as UserRole;
-                  setFormData({
-                    ...formData,
+                  setFormData({ 
+                    ...formData, 
                     role: newRole,
                     // Clear reporting fields if they become irrelevant
                     reportingPartner: newRole === UserRole.PARTNER ? '' : formData.reportingPartner,
@@ -906,20 +661,10 @@ const EmployeeCreation = () => {
                 ))}
               </select>
             </div>
-
+            
             {!isPartner && (
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Reporting Partner *</label>
-                  <button
-                    type="button"
-                    onClick={loadDropdownData}
-                    className="p-1 hover:bg-zinc-100 rounded text-zinc-400"
-                    title="Refresh List"
-                  >
-                    <RefreshCw size={12} />
-                  </button>
-                </div>
+                <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Reporting Partner *</label>
                 <select
                   required
                   className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
@@ -951,7 +696,7 @@ const EmployeeCreation = () => {
               </div>
             )}
           </div>
-
+          
           <div className="pt-4 border-t border-zinc-100 flex flex-col gap-4">
             {warning && (
               <div className="p-4 bg-amber-50 border border-amber-100 rounded-xl flex items-center gap-3 text-amber-700 text-sm">
@@ -972,7 +717,7 @@ const EmployeeCreation = () => {
                   </Link>
                 </div>
               ) : <div />}
-
+              
               <button
                 disabled={loading}
                 type="submit"
@@ -993,16 +738,10 @@ const SettingsPage = () => {
   const [outlookStatus, setOutlookStatus] = useState<{ connected: boolean; account?: string } | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const refreshStatus = () => {
-    setLoading(true);
+  useEffect(() => {
     fetch('/api/settings/outlook')
       .then(res => res.json())
-      .then(setOutlookStatus)
-      .finally(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    refreshStatus();
+      .then(setOutlookStatus);
   }, []);
 
   const handleConnectOutlook = async () => {
@@ -1010,7 +749,7 @@ const SettingsPage = () => {
     try {
       const res = await fetch('/api/auth/outlook/url');
       const data = await res.json();
-
+      
       if (data.url) {
         window.open(data.url, 'outlook_auth', 'width=600,height=700');
       } else {
@@ -1026,9 +765,10 @@ const SettingsPage = () => {
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      // Allow messages from any origin during development, or check specific ones
       if (event.data?.type === 'OUTLOOK_AUTH_SUCCESS') {
-        refreshStatus();
+        fetch('/api/settings/outlook')
+          .then(res => res.json())
+          .then(setOutlookStatus);
       }
     };
     window.addEventListener('message', handleMessage);
@@ -1053,22 +793,9 @@ const SettingsPage = () => {
                   <div>
                     <p className="text-sm font-semibold text-emerald-900">Connected to Outlook</p>
                     <p className="text-xs text-emerald-700">{outlookStatus.account}</p>
-                    <div className="flex items-center gap-4 mt-2">
-                      <div className="px-3 py-1 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-full border border-emerald-100 flex items-center gap-1.5 slice-in-from-right-4 animate-in fade-in">
-                        <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
-                        Connected
-                      </div>
-                      <button
-                        onClick={refreshStatus}
-                        className="text-xs text-zinc-500 hover:text-zinc-900 flex items-center gap-1"
-                      >
-                        <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
-                        Refresh
-                      </button>
-                    </div>
                   </div>
                 </div>
-                <button
+                <button 
                   onClick={handleConnectOutlook}
                   className="text-xs font-semibold text-emerald-700 hover:underline"
                 >
@@ -1086,7 +813,7 @@ const SettingsPage = () => {
                     <p className="text-xs text-zinc-500">Connect an account to enable automated emails.</p>
                   </div>
                 </div>
-                <button
+                <button 
                   onClick={handleConnectOutlook}
                   className="px-4 py-2 bg-zinc-900 text-white rounded-lg text-sm font-semibold hover:bg-zinc-800 transition-all"
                 >
@@ -1148,7 +875,7 @@ const LoginPage = ({ onLogin }: { onLogin: (user: any) => void }) => {
           <h1 className="text-3xl font-bold text-zinc-900 italic">MIS Portal</h1>
           <p className="text-zinc-500 mt-2">Sign in to your account to continue</p>
         </div>
-
+        
         <div className="bg-white p-8 rounded-2xl border border-zinc-200 shadow-xl">
           <form onSubmit={handleSubmit} className="space-y-6">
             {error && (
@@ -1157,7 +884,7 @@ const LoginPage = ({ onLogin }: { onLogin: (user: any) => void }) => {
                 <span>{error}</span>
               </div>
             )}
-
+            
             <div className="space-y-2">
               <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Email Address</label>
               <div className="relative">
@@ -1172,7 +899,7 @@ const LoginPage = ({ onLogin }: { onLogin: (user: any) => void }) => {
                 />
               </div>
             </div>
-
+            
             <div className="space-y-2">
               <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Password</label>
               <div className="relative">
@@ -1194,7 +921,7 @@ const LoginPage = ({ onLogin }: { onLogin: (user: any) => void }) => {
                 </button>
               </div>
             </div>
-
+            
             <button
               disabled={loading}
               type="submit"
@@ -1205,7 +932,7 @@ const LoginPage = ({ onLogin }: { onLogin: (user: any) => void }) => {
             </button>
           </form>
         </div>
-
+        
         <p className="text-center text-zinc-500 text-sm mt-8">
           Don't have an account? <span className="text-zinc-900 font-semibold">Contact your HR manager</span>
         </p>
@@ -1308,8 +1035,8 @@ const RegistrationPage = () => {
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          token,
+        body: JSON.stringify({ 
+          token, 
           password,
           ...regData,
           ...attachments
@@ -1356,7 +1083,7 @@ const RegistrationPage = () => {
           <h1 className="text-4xl font-bold text-zinc-900 italic">MIS Portal</h1>
           <p className="text-zinc-500 mt-2 text-lg">Complete your employee registration, {user?.firstName}</p>
         </div>
-
+        
         {success ? (
           <div className="bg-white p-12 rounded-3xl border border-zinc-200 shadow-xl text-center">
             <div className="w-20 h-20 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -1563,7 +1290,7 @@ const RegistrationPage = () => {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Permanent Address *</label>
-                    <button
+                    <button 
                       type="button"
                       onClick={() => setRegData({ ...regData, permanentAddress: regData.currentAddress })}
                       className="text-[10px] font-bold text-emerald-600 hover:underline uppercase tracking-widest"
@@ -1728,7 +1455,7 @@ const RegistrationPage = () => {
                 </div>
                 <h3 className="text-xl font-bold text-zinc-900">Attachments & Security</h3>
               </div>
-
+              
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 {/* File Uploads */}
                 <div className="space-y-6">
@@ -1738,7 +1465,7 @@ const RegistrationPage = () => {
                       {attachments.employeePhoto ? (
                         <div className="relative w-20 h-20 rounded-xl overflow-hidden border border-zinc-200">
                           <img src={attachments.employeePhoto} alt="Preview" className="w-full h-full object-cover" />
-                          <button onClick={() => setAttachments({ ...attachments, employeePhoto: '' })} className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full"><AlertCircle size={12} /></button>
+                          <button onClick={() => setAttachments({...attachments, employeePhoto: ''})} className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full"><AlertCircle size={12} /></button>
                         </div>
                       ) : (
                         <div className="w-20 h-20 rounded-xl bg-zinc-50 border-2 border-dashed border-zinc-200 flex items-center justify-center text-zinc-400">
@@ -1892,7 +1619,7 @@ export default function App() {
       <Routes>
         <Route path="/login" element={user ? <Navigate to="/" /> : <LoginPage onLogin={handleLogin} />} />
         <Route path="/register/:token" element={<RegistrationPage />} />
-
+        
         <Route path="/*" element={
           !user ? <Navigate to="/login" /> : (
             <div className="min-h-screen bg-zinc-50 flex">
