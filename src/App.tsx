@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useParams, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useParams, Navigate } from 'react-router-dom';
 import {
   Users,
   Settings,
@@ -51,7 +51,7 @@ const ai = new (GoogleGenAI as any)({
 // --- Components ---
 
 const Sidebar = ({ onLogout }: { onLogout: () => void }) => {
-  const { pathname } = useLocation();
+  const location = window.location.pathname;
 
   const menuItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
@@ -76,7 +76,7 @@ const Sidebar = ({ onLogout }: { onLogout: () => void }) => {
             to={item.path}
             className={cn(
               "flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 group",
-              pathname === item.path
+              location === item.path
                 ? "bg-zinc-800 text-white"
                 : "hover:bg-zinc-900 hover:text-zinc-200"
             )}
@@ -115,257 +115,6 @@ const Header = ({ title, user }: { title: string, user: any }) => (
 );
 
 // --- Pages ---
-
-const EditEmployeeModal = ({ employee, onClose, onSave }: { employee: Employee, onClose: () => void, onSave: (updates: Partial<Employee>) => void }) => {
-  const [formData, setFormData] = useState({
-    firstName: employee.firstName,
-    lastName: employee.lastName,
-    designation: employee.designation,
-    department: employee.department,
-    role: employee.role,
-    reportingPartner: employee.reportingPartner,
-    reportingManager: employee.reportingManager,
-  });
-  const [partners, setPartners] = useState<any[]>([]);
-  const [managers, setManagers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    // Fetch active/pending partners for the dropdown
-    fetch(`/api/users/by-role/${UserRole.PARTNER}`)
-      .then(res => res.json())
-      .then(setPartners);
-
-    // Fetch active/pending managers for the dropdown
-    fetch(`/api/users/by-role/${UserRole.MANAGER}`)
-      .then(res => res.json())
-      .then(setManagers);
-  }, []);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-
-    const updates = { ...formData };
-    if (updates.role === UserRole.PARTNER) {
-      updates.reportingPartner = '';
-      updates.reportingManager = '';
-    } else if (updates.role === UserRole.MANAGER) {
-      updates.reportingManager = updates.reportingPartner;
-    }
-
-    try {
-      const res = await fetch(`/api/employees/${employee.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates),
-      });
-      if (res.ok) {
-        onSave(updates);
-        onClose();
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const isPartner = formData.role === UserRole.PARTNER;
-  const isManager = formData.role === UserRole.MANAGER;
-
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
-        <div className="px-8 py-6 border-b border-zinc-100 flex items-center justify-between flex-shrink-0">
-          <h3 className="text-xl font-bold text-zinc-900">Edit Employee</h3>
-          <button onClick={onClose} className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-400">
-            <X size={20} />
-          </button>
-        </div>
-        <form onSubmit={handleSubmit} className="p-8 space-y-4 overflow-y-auto">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">First Name *</label>
-              <input
-                required
-                className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm"
-                value={formData.firstName}
-                onChange={e => setFormData({ ...formData, firstName: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Last Name *</label>
-              <input
-                required
-                className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm"
-                value={formData.lastName}
-                onChange={e => setFormData({ ...formData, lastName: e.target.value })}
-              />
-            </div>
-          </div>
-          <div className="space-y-1">
-            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Designation *</label>
-            <input
-              required
-              className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm"
-              value={formData.designation}
-              onChange={e => setFormData({ ...formData, designation: e.target.value })}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Department *</label>
-              <select
-                required
-                className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm bg-white"
-                value={formData.department}
-                onChange={e => setFormData({ ...formData, department: e.target.value })}
-              >
-                {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
-              </select>
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Software Role *</label>
-              <select
-                required
-                className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm bg-white"
-                value={formData.role}
-                onChange={e => {
-                  const newRole = e.target.value as UserRole;
-                  setFormData({ ...formData, role: newRole });
-                }}
-              >
-                {Object.values(UserRole).map(r => <option key={r} value={r}>{r}</option>)}
-              </select>
-            </div>
-          </div>
-
-          {!isPartner && (
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Reporting Partner *</label>
-              <select
-                required
-                className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm bg-white"
-                value={formData.reportingPartner}
-                onChange={e => setFormData({ ...formData, reportingPartner: e.target.value })}
-              >
-                <option value="">Select Partner</option>
-                {partners.map(p => <option key={p.id} value={`${p.firstName} ${p.lastName}`}>{p.firstName} {p.lastName}</option>)}
-              </select>
-            </div>
-          )}
-
-          {!isPartner && !isManager && (
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Reporting Manager *</label>
-              <select
-                required
-                className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm bg-white"
-                value={formData.reportingManager}
-                onChange={e => setFormData({ ...formData, reportingManager: e.target.value })}
-              >
-                <option value="">Select Manager</option>
-                {managers.map(m => <option key={m.id} value={`${m.firstName} ${m.lastName}`}>{m.firstName} {m.lastName}</option>)}
-              </select>
-            </div>
-          )}
-
-          <div className="pt-6 flex gap-3 flex-shrink-0">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 py-3 text-zinc-600 font-semibold hover:bg-zinc-50 rounded-xl transition-all"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="flex-1 py-3 bg-zinc-900 text-white font-semibold rounded-xl hover:bg-zinc-800 transition-all shadow-xl shadow-zinc-200 flex items-center justify-center gap-2"
-            >
-              {loading && <Loader2 size={18} className="animate-spin" />}
-              Save Changes
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-};
-
-const ActionsMenu = ({ employee, onAction }: { employee: Employee, onAction: (type: 'edit' | 'status' | 'resend') => void }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const menuRef = React.useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  return (
-    <div className="relative" ref={menuRef}>
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className={cn(
-          "p-2 rounded-lg transition-colors border",
-          isOpen ? "bg-zinc-100 text-zinc-900 border-zinc-300" : "text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 border-transparent"
-        )}
-      >
-        <MoreHorizontal size={18} />
-      </button>
-
-      {isOpen && (
-        <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-2xl border border-zinc-100 py-2 z-20 animate-in fade-in zoom-in duration-200 origin-top-right">
-          <button
-            onClick={() => { onAction('edit'); setIsOpen(false); }}
-            className="w-full px-4 py-2.5 text-left text-sm text-zinc-700 hover:bg-zinc-50 flex items-center gap-3"
-          >
-            <Edit2 size={16} className="text-zinc-400" />
-            <span>Edit Details</span>
-          </button>
-
-          {employee.status !== 'Active' && employee.status !== 'Disabled' && (
-            <button
-              onClick={() => { onAction('resend'); setIsOpen(false); }}
-              className="w-full px-4 py-2.5 text-left text-sm text-emerald-600 hover:bg-emerald-50 flex items-center gap-3"
-            >
-              <Send size={16} />
-              <span>Resend Invite</span>
-            </button>
-          )}
-
-          <div className="my-1 border-t border-zinc-100" />
-
-          <button
-            onClick={() => { onAction('status'); setIsOpen(false); }}
-            className={cn(
-              "w-full px-4 py-2.5 text-left text-sm flex items-center gap-3",
-              employee.status === 'Disabled' ? "text-emerald-600 hover:bg-emerald-50" : "text-red-600 hover:bg-red-50"
-            )}
-          >
-            {employee.status === 'Disabled' ? (
-              <>
-                <Check size={16} />
-                <span>Enable Account</span>
-              </>
-            ) : (
-              <>
-                <Slash size={16} />
-                <span>Disable Account</span>
-              </>
-            )}
-          </button>
-        </div>
-      )}
-    </div>
-  );
-};
 
 const EmployeeList = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -763,10 +512,6 @@ const EmployeeCreation = () => {
       .then(res => res.json())
       .then(setManagers)
       .catch(err => console.error('Error fetching managers:', err));
-  };
-
-  useEffect(() => {
-    loadDropdownData();
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -775,41 +520,27 @@ const EmployeeCreation = () => {
     setWarning(null);
     setError(null);
 
-    // Comprehensive validation
-    if (!formData.firstName || !formData.lastName || !formData.email || !formData.designation || !formData.dateOfJoining) {
-      setError("All basic fields (Name, Email, Designation, Date of Joining) are mandatory.");
-      setLoading(false);
-      return;
-    }
+    // Final check for mandatory fields based on role
+    const isPartner = formData.role === UserRole.PARTNER;
+    const isManager = formData.role === UserRole.MANAGER;
 
-    const isCPartner = formData.role === UserRole.PARTNER;
-    const isCManager = formData.role === UserRole.MANAGER;
-
-    if (!isCPartner && !formData.reportingPartner) {
+    if (!isPartner && !formData.reportingPartner) {
       setError("Reporting Partner is mandatory");
       setLoading(false);
       return;
     }
 
-    if (formData.role === UserRole.EMPLOYEE && !formData.reportingManager) {
-      setError("Reporting Manager is mandatory for Employee role");
+    if (!isPartner && !isManager && !formData.reportingManager) {
+      setError("Reporting Manager is mandatory");
       setLoading(false);
       return;
-    }
-
-    const payload = { ...formData };
-    if (isCPartner) {
-      payload.reportingPartner = '';
-      payload.reportingManager = '';
-    } else if (isCManager) {
-      payload.reportingManager = payload.reportingPartner; // Manager reports to Partner
     }
 
     try {
       const res = await fetch('/api/employees', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(formData),
       });
       const data = await res.json();
       if (res.ok) {
@@ -1581,29 +1312,6 @@ const RegistrationPage = () => {
     e.preventDefault();
     if (password !== confirmPassword) {
       setError('Passwords do not match');
-      window.scrollTo(0, 0);
-      return;
-    }
-
-    // Comprehensive validation for mandatory fields
-    const requiredRegFields = [
-      'gender', 'dateOfBirth', 'pan', 'aadhaar', 'maritalStatus',
-      'personalEmail', 'personalMobile', 'currentAddress', 'pin',
-      'permanentAddress', 'guardian1Name', 'guardian1Contact',
-      'guardian1Address', 'guardian2Name', 'guardian2Contact',
-      'guardian2Address', 'educationalQualification'
-    ];
-
-    for (const field of requiredRegFields) {
-      if (!(regData as any)[field]) {
-        setError(`${field.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())} is mandatory`);
-        window.scrollTo(0, 0);
-        return;
-      }
-    }
-
-    if (!regData.bankDetails.accountNumber || !regData.bankDetails.ifscCode || !regData.bankDetails.bankName || !regData.bankDetails.branchName) {
-      setError('All Bank Details are mandatory');
       window.scrollTo(0, 0);
       return;
     }
