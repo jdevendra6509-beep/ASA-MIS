@@ -14,8 +14,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // --- Firebase Initialization ---
-const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT 
-  ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT) 
+const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT
+  ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
   : null;
 
 if (serviceAccount) {
@@ -41,7 +41,7 @@ async function seedDatabase() {
       console.log("Seeding default permissions...");
       const roles = ["Master Admin", "Admin", "Owner", "Partner", "Manager", "Employee"];
       const permissions = ["view_dashboard", "create_employee", "view_employee_list", "manage_settings", "view_reports"];
-      
+
       const batch = db.batch();
       roles.forEach(role => {
         permissions.forEach(perm => {
@@ -49,7 +49,7 @@ async function seedDatabase() {
           if (role === "Admin" && perm !== "manage_settings") enabled = true;
           if (perm === "view_dashboard") enabled = true;
           if (perm === "view_employee_list" && role !== "Employee") enabled = true;
-          
+
           const ref = db.collection('role_permissions').doc(`${role}_${perm}`);
           batch.set(ref, { role, permission: perm, enabled });
         });
@@ -112,7 +112,7 @@ async function getGraphClient() {
       account: tokenData.account,
       scopes: ["user.read", "mail.send"],
     });
-    
+
     return Client.init({
       authProvider: (done) => done(null, response.accessToken),
     });
@@ -180,9 +180,9 @@ async function startServer() {
   app.post("/api/auth/login", async (req, res) => {
     const { email, password } = req.body;
     const snap = await db.collection('users').where('email', '==', email).limit(1).get();
-    
+
     if (snap.empty) return res.status(401).json({ error: "Invalid credentials" });
-    
+
     const userDoc = snap.docs[0];
     const user = { id: userDoc.id, ...userDoc.data() } as any;
 
@@ -202,15 +202,15 @@ async function startServer() {
   app.get("/api/auth/verify-token/:token", async (req, res) => {
     const { token } = req.params;
     const snap = await db.collection('users').where('registrationToken', '==', token).limit(1).get();
-    
+
     if (snap.empty) return res.status(404).json({ error: "Invalid token" });
-    
+
     const user = snap.docs[0].data() as any;
     if (new Date(user.registrationTokenExpires) < new Date()) {
       return res.status(400).json({ error: "Token expired" });
     }
 
-    res.json({ 
+    res.json({
       email: user.email, firstName: user.firstName, lastName: user.lastName,
       designation: user.designation, dateOfJoining: user.dateOfJoining,
       role: user.role, department: user.department,
@@ -221,12 +221,12 @@ async function startServer() {
   app.post("/api/auth/register", async (req, res) => {
     const { token, password, ...rest } = req.body;
     const snap = await db.collection('users').where('registrationToken', '==', token).limit(1).get();
-    
+
     if (snap.empty) return res.status(404).json({ error: "Invalid token" });
-    
+
     const userDoc = snap.docs[0];
     const hashedPassword = await bcrypt.hash(password, 10);
-    
+
     try {
       await userDoc.ref.update({
         ...rest,
@@ -253,7 +253,7 @@ async function startServer() {
     try {
       const docRef = await db.collection('users').add({
         firstName, lastName, email, role, department, ...rest,
-        employeeCode, registrationToken, 
+        employeeCode, registrationToken,
         registrationTokenExpires: expires.toISOString(),
         status: 'Pending',
         createdAt: admin.firestore.FieldValue.serverTimestamp()
@@ -280,7 +280,11 @@ async function startServer() {
 
   app.get("/api/users/by-role/:role", async (req, res) => {
     const { role } = req.params;
-    const snap = await db.collection('users').where('role', '==', role).where('status', '==', 'Active').get();
+    // Include both Active and Pending users so they show up in dropdowns during setup
+    const snap = await db.collection('users')
+      .where('role', '==', role)
+      .where('status', 'in', ['Active', 'Pending'])
+      .get();
     res.json(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
   });
 
@@ -298,6 +302,66 @@ async function startServer() {
     const { role, permission, enabled } = req.body;
     await db.collection('role_permissions').doc(`${role}_${permission}`).update({ enabled });
     res.json({ success: true });
+  });
+
+  // --- Clients ---
+  app.post("/api/clients", async (req, res) => {
+    try {
+      const clientData = { ...req.body, createdAt: new Date().toISOString() };
+      const docRef = await db.collection('clients').add(clientData);
+      res.status(201).json({ id: docRef.id, ...clientData });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/clients", async (req, res) => {
+    try {
+      const snap = await db.collection('clients').orderBy('createdAt', 'desc').get();
+      res.json(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // --- Projects ---
+  app.post("/api/projects", async (req, res) => {
+    try {
+      const projectData = { ...req.body, createdAt: new Date().toISOString() };
+      const docRef = await db.collection('projects').add(projectData);
+      res.status(201).json({ id: docRef.id, ...projectData });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/projects", async (req, res) => {
+    try {
+      const snap = await db.collection('projects').orderBy('createdAt', 'desc').get();
+      res.json(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // --- Jobs ---
+  app.post("/api/jobs", async (req, res) => {
+    try {
+      const jobData = { ...req.body, createdAt: new Date().toISOString() };
+      const docRef = await db.collection('jobs').add(jobData);
+      res.status(201).json({ id: docRef.id, ...jobData });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/jobs", async (req, res) => {
+    try {
+      const snap = await db.collection('jobs').orderBy('createdAt', 'desc').get();
+      res.json(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
   });
 
   // --- Vite Middleware ---
