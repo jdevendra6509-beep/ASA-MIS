@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useParams, Navigate } from 'react-router-dom';
-import {
-  Users,
-  Settings,
-  Mail,
-  LayoutDashboard,
-  UserPlus,
+import { 
+  Users, 
+  Settings, 
+  Mail, 
+  LayoutDashboard, 
+  UserPlus, 
   LogOut,
   CheckCircle2,
   AlertCircle,
@@ -34,7 +34,7 @@ import { UserRole, Employee, DEPARTMENTS } from './types';
 import { cn } from './lib/utils';
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new (GoogleGenAI as any)({
+const ai = new (GoogleGenAI as any)({ 
   apiKey: process.env.GEMINI_API_KEY || "",
   fetch: (...args: any[]) => (window.fetch as any)(...args)
 });
@@ -43,9 +43,8 @@ const ai = new (GoogleGenAI as any)({
 
 const Sidebar = ({ onLogout }: { onLogout: () => void }) => {
   const location = window.location.pathname;
-
+  
   const menuItems = [
-    { icon: Users, label: 'Employee List', path: '/employees' },
     { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
     { icon: UserPlus, label: 'Employee Creation', path: '/employees/create' },
     { icon: Users, label: 'Employee List', path: '/employees' },
@@ -65,8 +64,8 @@ const Sidebar = ({ onLogout }: { onLogout: () => void }) => {
             to={item.path}
             className={cn(
               "flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 group",
-              location === item.path
-                ? "bg-zinc-800 text-white"
+              location === item.path 
+                ? "bg-zinc-800 text-white" 
                 : "hover:bg-zinc-900 hover:text-zinc-200"
             )}
           >
@@ -76,7 +75,7 @@ const Sidebar = ({ onLogout }: { onLogout: () => void }) => {
         ))}
       </nav>
       <div className="p-4 border-t border-zinc-800">
-        <button
+        <button 
           onClick={onLogout}
           className="flex items-center gap-3 px-4 py-3 w-full text-left hover:text-red-400 transition-colors"
         >
@@ -140,7 +139,7 @@ const EmployeeList = () => {
           <h3 className="text-2xl font-bold text-zinc-900">Employee Directory</h3>
           <p className="text-zinc-500 text-sm">Manage and view all registered employees in the system.</p>
         </div>
-        <button
+        <button 
           onClick={() => navigate('/employees/create')}
           className="flex items-center gap-2 px-6 py-3 bg-zinc-900 text-white rounded-xl font-semibold hover:bg-zinc-800 transition-all shadow-lg shadow-zinc-200"
         >
@@ -153,18 +152,18 @@ const EmployeeList = () => {
       <div className="bg-white p-4 rounded-2xl border border-zinc-200 shadow-sm mb-6 flex flex-wrap items-center gap-4">
         <div className="flex-1 min-w-[300px] relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-          <input
-            type="text"
-            placeholder="Search by name or employee code..."
+          <input 
+            type="text" 
+            placeholder="Search by name or employee code..." 
             className="w-full pl-12 pr-4 py-2.5 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-
+        
         <div className="flex items-center gap-2">
           <Filter size={16} className="text-zinc-400" />
-          <select
+          <select 
             className="px-4 py-2.5 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm bg-white"
             value={filterDept}
             onChange={(e) => setFilterDept(e.target.value)}
@@ -177,7 +176,7 @@ const EmployeeList = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          <select
+          <select 
             className="px-4 py-2.5 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm bg-white"
             value={filterRole}
             onChange={(e) => setFilterRole(e.target.value)}
@@ -249,8 +248,8 @@ const EmployeeList = () => {
                     <td className="px-6 py-4">
                       <span className={cn(
                         "text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-full",
-                        emp.status === 'Active'
-                          ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
+                        emp.status === 'Active' 
+                          ? "bg-emerald-50 text-emerald-700 border border-emerald-100" 
                           : "bg-amber-50 text-amber-700 border border-amber-100"
                       )}>
                         {emp.status || 'Pending'}
@@ -315,7 +314,7 @@ const Dashboard = () => {
           </div>
         ))}
       </div>
-
+      
       <AIInsights employees={employees} />
     </div>
   );
@@ -360,13 +359,13 @@ const AIInsights = ({ employees }: { employees: Employee[] }) => {
             <p className="text-zinc-400 text-xs">Powered by Gemini 2.0 Flash</p>
           </div>
         </div>
-
+        
         {insight ? (
           <div className="prose prose-invert max-w-none">
             <div className="text-zinc-300 text-sm leading-relaxed whitespace-pre-line">
               {insight}
             </div>
-            <button
+            <button 
               onClick={() => setInsight('')}
               className="mt-6 text-xs font-bold uppercase tracking-widest text-emerald-400 hover:text-emerald-300 transition-colors"
             >
@@ -376,7 +375,7 @@ const AIInsights = ({ employees }: { employees: Employee[] }) => {
         ) : (
           <div className="flex flex-col items-start gap-4">
             <p className="text-zinc-400 text-sm">Generate real-time organizational analysis based on your current workforce data.</p>
-            <button
+            <button 
               onClick={generateInsight}
               disabled={loading || employees.length === 0}
               className="px-6 py-2.5 bg-white text-zinc-900 rounded-xl font-bold text-sm hover:bg-zinc-200 transition-all disabled:opacity-50"
@@ -414,7 +413,7 @@ const PermissionsManager = () => {
         body: JSON.stringify({ role, permission, enabled: !current }),
       });
       if (res.ok) {
-        setPermissions(prev => prev.map(p =>
+        setPermissions(prev => prev.map(p => 
           (p.role === role && p.permission === permission) ? { ...p, enabled: !current ? 1 : 0 } : p
         ));
       }
@@ -447,7 +446,7 @@ const PermissionsManager = () => {
                 const isEnabled = p?.enabled === 1;
                 return (
                   <td key={role} className="py-4 px-4 text-center">
-                    <button
+                    <button 
                       onClick={() => togglePermission(role, perm, isEnabled)}
                       className={cn(
                         "w-10 h-5 rounded-full transition-all relative",
@@ -501,10 +500,6 @@ const EmployeeCreation = () => {
       .then(res => res.json())
       .then(setManagers)
       .catch(err => console.error('Error fetching managers:', err));
-  };
-
-  useEffect(() => {
-    loadDropdownData();
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -512,36 +507,28 @@ const EmployeeCreation = () => {
     setLoading(true);
     setWarning(null);
     setError(null);
-
+    
     // Final check for mandatory fields based on role
     const isPartner = formData.role === UserRole.PARTNER;
     const isManager = formData.role === UserRole.MANAGER;
-
+    
     if (!isPartner && !formData.reportingPartner) {
       setError("Reporting Partner is mandatory");
       setLoading(false);
       return;
     }
-
+    
     if (!isPartner && !isManager && !formData.reportingManager) {
       setError("Reporting Manager is mandatory");
       setLoading(false);
       return;
     }
 
-    const payload = { ...formData };
-    if (isPartner) {
-      payload.reportingPartner = '';
-      payload.reportingManager = '';
-    } else if (isManager) {
-      payload.reportingManager = payload.reportingPartner; // Manager reports to Partner
-    }
-
     try {
       const res = await fetch('/api/employees', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(formData),
       });
       const data = await res.json();
       if (res.ok) {
@@ -587,7 +574,7 @@ const EmployeeCreation = () => {
               <span>{error}</span>
             </div>
           )}
-
+          
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
               <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">First Name *</label>
@@ -647,8 +634,8 @@ const EmployeeCreation = () => {
                 value={formData.role}
                 onChange={e => {
                   const newRole = e.target.value as UserRole;
-                  setFormData({
-                    ...formData,
+                  setFormData({ 
+                    ...formData, 
                     role: newRole,
                     // Clear reporting fields if they become irrelevant
                     reportingPartner: newRole === UserRole.PARTNER ? '' : formData.reportingPartner,
@@ -674,7 +661,7 @@ const EmployeeCreation = () => {
                 ))}
               </select>
             </div>
-
+            
             {!isPartner && (
               <div className="space-y-2">
                 <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Reporting Partner *</label>
@@ -709,7 +696,7 @@ const EmployeeCreation = () => {
               </div>
             )}
           </div>
-
+          
           <div className="pt-4 border-t border-zinc-100 flex flex-col gap-4">
             {warning && (
               <div className="p-4 bg-amber-50 border border-amber-100 rounded-xl flex items-center gap-3 text-amber-700 text-sm">
@@ -730,7 +717,7 @@ const EmployeeCreation = () => {
                   </Link>
                 </div>
               ) : <div />}
-
+              
               <button
                 disabled={loading}
                 type="submit"
@@ -762,7 +749,7 @@ const SettingsPage = () => {
     try {
       const res = await fetch('/api/auth/outlook/url');
       const data = await res.json();
-
+      
       if (data.url) {
         window.open(data.url, 'outlook_auth', 'width=600,height=700');
       } else {
@@ -808,7 +795,7 @@ const SettingsPage = () => {
                     <p className="text-xs text-emerald-700">{outlookStatus.account}</p>
                   </div>
                 </div>
-                <button
+                <button 
                   onClick={handleConnectOutlook}
                   className="text-xs font-semibold text-emerald-700 hover:underline"
                 >
@@ -826,7 +813,7 @@ const SettingsPage = () => {
                     <p className="text-xs text-zinc-500">Connect an account to enable automated emails.</p>
                   </div>
                 </div>
-                <button
+                <button 
                   onClick={handleConnectOutlook}
                   className="px-4 py-2 bg-zinc-900 text-white rounded-lg text-sm font-semibold hover:bg-zinc-800 transition-all"
                 >
@@ -888,7 +875,7 @@ const LoginPage = ({ onLogin }: { onLogin: (user: any) => void }) => {
           <h1 className="text-3xl font-bold text-zinc-900 italic">MIS Portal</h1>
           <p className="text-zinc-500 mt-2">Sign in to your account to continue</p>
         </div>
-
+        
         <div className="bg-white p-8 rounded-2xl border border-zinc-200 shadow-xl">
           <form onSubmit={handleSubmit} className="space-y-6">
             {error && (
@@ -897,7 +884,7 @@ const LoginPage = ({ onLogin }: { onLogin: (user: any) => void }) => {
                 <span>{error}</span>
               </div>
             )}
-
+            
             <div className="space-y-2">
               <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Email Address</label>
               <div className="relative">
@@ -912,7 +899,7 @@ const LoginPage = ({ onLogin }: { onLogin: (user: any) => void }) => {
                 />
               </div>
             </div>
-
+            
             <div className="space-y-2">
               <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Password</label>
               <div className="relative">
@@ -934,7 +921,7 @@ const LoginPage = ({ onLogin }: { onLogin: (user: any) => void }) => {
                 </button>
               </div>
             </div>
-
+            
             <button
               disabled={loading}
               type="submit"
@@ -945,7 +932,7 @@ const LoginPage = ({ onLogin }: { onLogin: (user: any) => void }) => {
             </button>
           </form>
         </div>
-
+        
         <p className="text-center text-zinc-500 text-sm mt-8">
           Don't have an account? <span className="text-zinc-900 font-semibold">Contact your HR manager</span>
         </p>
@@ -1035,28 +1022,6 @@ const RegistrationPage = () => {
       return;
     }
 
-    // Comprehensive validation for mandatory fields
-    const requiredRegFields = [
-      'gender', 'dateOfBirth', 'pan', 'aadhaar', 'maritalStatus',
-      'personalEmail', 'personalMobile', 'currentAddress', 'pin',
-      'permanentAddress', 'guardian1Name', 'guardian1Contact',
-      'guardian1Address', 'educationalQualification'
-    ];
-
-    for (const field of requiredRegFields) {
-      if (!(regData as any)[field]) {
-        setError(`${field.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())} is mandatory`);
-        window.scrollTo(0, 0);
-        return;
-      }
-    }
-
-    if (!regData.bankDetails.accountNumber || !regData.bankDetails.ifscCode || !regData.bankDetails.bankName || !regData.bankDetails.branchName) {
-      setError('All Bank Details are mandatory');
-      window.scrollTo(0, 0);
-      return;
-    }
-
     // Basic validation for attachments
     if (!attachments.employeePhoto || !attachments.panAttachment || !attachments.aadhaarAttachment || !attachments.chequeBookAttachment) {
       setError('All attachments are mandatory');
@@ -1070,8 +1035,8 @@ const RegistrationPage = () => {
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          token,
+        body: JSON.stringify({ 
+          token, 
           password,
           ...regData,
           ...attachments
@@ -1118,7 +1083,7 @@ const RegistrationPage = () => {
           <h1 className="text-4xl font-bold text-zinc-900 italic">MIS Portal</h1>
           <p className="text-zinc-500 mt-2 text-lg">Complete your employee registration, {user?.firstName}</p>
         </div>
-
+        
         {success ? (
           <div className="bg-white p-12 rounded-3xl border border-zinc-200 shadow-xl text-center">
             <div className="w-20 h-20 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -1325,7 +1290,7 @@ const RegistrationPage = () => {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Permanent Address *</label>
-                    <button
+                    <button 
                       type="button"
                       onClick={() => setRegData({ ...regData, permanentAddress: regData.currentAddress })}
                       className="text-[10px] font-bold text-emerald-600 hover:underline uppercase tracking-widest"
@@ -1490,7 +1455,7 @@ const RegistrationPage = () => {
                 </div>
                 <h3 className="text-xl font-bold text-zinc-900">Attachments & Security</h3>
               </div>
-
+              
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 {/* File Uploads */}
                 <div className="space-y-6">
@@ -1500,7 +1465,7 @@ const RegistrationPage = () => {
                       {attachments.employeePhoto ? (
                         <div className="relative w-20 h-20 rounded-xl overflow-hidden border border-zinc-200">
                           <img src={attachments.employeePhoto} alt="Preview" className="w-full h-full object-cover" />
-                          <button onClick={() => setAttachments({ ...attachments, employeePhoto: '' })} className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full"><AlertCircle size={12} /></button>
+                          <button onClick={() => setAttachments({...attachments, employeePhoto: ''})} className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full"><AlertCircle size={12} /></button>
                         </div>
                       ) : (
                         <div className="w-20 h-20 rounded-xl bg-zinc-50 border-2 border-dashed border-zinc-200 flex items-center justify-center text-zinc-400">
@@ -1654,7 +1619,7 @@ export default function App() {
       <Routes>
         <Route path="/login" element={user ? <Navigate to="/" /> : <LoginPage onLogin={handleLogin} />} />
         <Route path="/register/:token" element={<RegistrationPage />} />
-
+        
         <Route path="/*" element={
           !user ? <Navigate to="/login" /> : (
             <div className="min-h-screen bg-zinc-50 flex">
