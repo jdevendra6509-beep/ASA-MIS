@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useParams, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useParams, Navigate, useLocation } from 'react-router-dom';
 import {
   Users,
   Settings,
@@ -51,15 +51,15 @@ const ai = new (GoogleGenAI as any)({
 // --- Components ---
 
 const Sidebar = ({ onLogout }: { onLogout: () => void }) => {
-  const location = window.location.pathname;
+  const { pathname } = useLocation();
 
   const menuItems = [
+    { icon: Users, label: 'Employee List', path: '/employees' },
     { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
     { icon: UserPlus, label: 'Employee Creation', path: '/employees/create' },
     { icon: Building2, label: 'Client Creation', path: '/clients/create' },
     { icon: FolderKanban, label: 'Project Creation', path: '/projects/create' },
     { icon: ClipboardList, label: 'Job Creation', path: '/jobs/create' },
-    { icon: Users, label: 'Employee List', path: '/employees' },
     { icon: Settings, label: 'System Setup', path: '/settings' },
   ];
 
@@ -76,7 +76,7 @@ const Sidebar = ({ onLogout }: { onLogout: () => void }) => {
             to={item.path}
             className={cn(
               "flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 group",
-              location === item.path
+              pathname === item.path
                 ? "bg-zinc-800 text-white"
                 : "hover:bg-zinc-900 hover:text-zinc-200"
             )}
@@ -512,6 +512,10 @@ const EmployeeCreation = () => {
       .then(res => res.json())
       .then(setManagers)
       .catch(err => console.error('Error fetching managers:', err));
+  };
+
+  useEffect(() => {
+    loadDropdownData();
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -519,6 +523,13 @@ const EmployeeCreation = () => {
     setLoading(true);
     setWarning(null);
     setError(null);
+
+    // Comprehensive validation
+    if (!formData.firstName || !formData.lastName || !formData.email || !formData.designation || !formData.dateOfJoining) {
+      setError("All basic fields (Name, Email, Designation, Date of Joining) are mandatory.");
+      setLoading(false);
+      return;
+    }
 
     // Final check for mandatory fields based on role
     const isPartner = formData.role === UserRole.PARTNER;
@@ -536,11 +547,19 @@ const EmployeeCreation = () => {
       return;
     }
 
+    const payload = { ...formData };
+    if (isPartner) {
+      payload.reportingPartner = '';
+      payload.reportingManager = '';
+    } else if (isManager) {
+      payload.reportingManager = payload.reportingPartner; // Manager reports to Partner
+    }
+
     try {
       const res = await fetch('/api/employees', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (res.ok) {
@@ -1312,6 +1331,28 @@ const RegistrationPage = () => {
     e.preventDefault();
     if (password !== confirmPassword) {
       setError('Passwords do not match');
+      window.scrollTo(0, 0);
+      return;
+    }
+
+    // Comprehensive validation for mandatory fields
+    const requiredRegFields = [
+      'gender', 'dateOfBirth', 'pan', 'aadhaar', 'maritalStatus',
+      'personalEmail', 'personalMobile', 'currentAddress', 'pin',
+      'permanentAddress', 'guardian1Name', 'guardian1Contact',
+      'guardian1Address', 'educationalQualification'
+    ];
+
+    for (const field of requiredRegFields) {
+      if (!(regData as any)[field]) {
+        setError(`${field.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())} is mandatory`);
+        window.scrollTo(0, 0);
+        return;
+      }
+    }
+
+    if (!regData.bankDetails.accountNumber || !regData.bankDetails.ifscCode || !regData.bankDetails.bankName || !regData.bankDetails.branchName) {
+      setError('All Bank Details are mandatory');
       window.scrollTo(0, 0);
       return;
     }
