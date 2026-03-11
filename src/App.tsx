@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useParams, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useParams, Navigate } from 'react-router-dom';
 import {
   Users,
   Settings,
@@ -76,7 +76,7 @@ const importFromExcel = (file: File, callback: (data: any[]) => void) => {
 // --- Components ---
 
 const Sidebar = ({ onLogout }: { onLogout: () => void }) => {
-  const { pathname } = useLocation();
+  const location = window.location.pathname;
 
   const menuItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
@@ -101,12 +101,12 @@ const Sidebar = ({ onLogout }: { onLogout: () => void }) => {
             to={item.path}
             className={cn(
               "flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 group",
-              pathname === item.path
+              location === item.path
                 ? "bg-zinc-800 text-white"
                 : "hover:bg-zinc-900 hover:text-zinc-200"
             )}
           >
-            <item.icon size={18} className={cn(pathname === item.path ? "text-emerald-400" : "group-hover:text-emerald-400")} />
+            <item.icon size={18} className={cn(location === item.path ? "text-emerald-400" : "group-hover:text-emerald-400")} />
             <span className="text-sm font-medium">{item.label}</span>
           </Link>
         ))}
@@ -1847,27 +1847,18 @@ const EmployeeCreation = ({ user, onSuccess, initialData }: { user: any, onSucce
         .then(setPartners)
         .catch(err => console.error('Error fetching partners:', err));
 
-      // Fetch managers for the dropdown
+      // Fetch active managers for the dropdown
       fetch(`/api/users/by-role/${UserRole.MANAGER}`)
         .then(res => res.json())
         .then(setManagers)
         .catch(err => console.error('Error fetching managers:', err));
-    };
-    loadDropdownData();
-  }, []);
+    }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setWarning(null);
     setError(null);
-
-    // Comprehensive validation
-    if (!formData.firstName || !formData.lastName || !formData.email || !formData.designation || !formData.dateOfJoining) {
-      setError("All basic fields (Name, Email, Designation, Date of Joining) are mandatory.");
-      setLoading(false);
-      return;
-    }
 
     // Final check for mandatory fields based on role
     const isPartner = formData.role === UserRole.PARTNER;

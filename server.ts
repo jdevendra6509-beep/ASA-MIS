@@ -446,11 +446,7 @@ async function startServer() {
 
   app.get("/api/users/by-role/:role", async (req, res) => {
     const { role } = req.params;
-    // Include both Active and Pending users so they show up in dropdowns during setup
-    const snap = await db.collection('users')
-      .where('role', '==', role)
-      .where('status', 'in', ['Active', 'Pending'])
-      .get();
+    const snap = await db.collection('users').where('role', '==', role).where('status', '==', 'Active').get();
     res.json(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
   });
 
