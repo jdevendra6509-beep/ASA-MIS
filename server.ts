@@ -14,6 +14,15 @@ import bcrypt from 'bcryptjs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+enum UserRole {
+  MASTER_ADMIN = "Master Admin",
+  ADMIN = "Admin",
+  OWNER = "Owner",
+  PARTNER = "Partner",
+  MANAGER = "Manager",
+  EMPLOYEE = "Employee"
+}
+
 // --- Database Initialization ---
 const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT
   ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)

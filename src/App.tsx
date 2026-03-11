@@ -495,6 +495,7 @@ const EmployeeMaster = ({ user }: { user: any }) => {
 const ClientMaster = ({ user }: { user: any }) => {
   const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [actionMenuId, setActionMenuId] = useState<string | null>(null);
   const [editingClient, setEditingClient] = useState<any | null>(null);
@@ -1840,19 +1841,18 @@ const EmployeeCreation = ({ user, onSuccess, initialData }: { user: any, onSucce
   }, [initialData]);
 
   useEffect(() => {
-    const loadDropdownData = () => {
-      // Fetch partners for the dropdown
-      fetch(`/api/users/by-role/${UserRole.PARTNER}`)
-        .then(res => res.json())
-        .then(setPartners)
-        .catch(err => console.error('Error fetching partners:', err));
+    // Fetch partners for the dropdown
+    fetch(`/api/users/by-role/${UserRole.PARTNER}`)
+      .then(res => res.json())
+      .then(setPartners)
+      .catch(err => console.error('Error fetching partners:', err));
 
-      // Fetch active managers for the dropdown
-      fetch(`/api/users/by-role/${UserRole.MANAGER}`)
-        .then(res => res.json())
-        .then(setManagers)
-        .catch(err => console.error('Error fetching managers:', err));
-    }, []);
+    // Fetch active managers for the dropdown
+    fetch(`/api/users/by-role/${UserRole.MANAGER}`)
+      .then(res => res.json())
+      .then(setManagers)
+      .catch(err => console.error('Error fetching managers:', err));
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2103,7 +2103,7 @@ const ClientCreation = ({ user, onSuccess, initialData }: { user: any, onSuccess
     setLoading(true);
     setError(null);
     try {
-      const url = initialData?.id ? `/ api / clients / ${initialData.id}` : '/api/clients';
+      const url = initialData?.id ? `/api/clients/${initialData.id}` : '/api/clients';
       const method = initialData?.id ? 'PATCH' : 'POST';
       const res = await fetch(url, {
         method,
@@ -2187,7 +2187,7 @@ const ProjectCreation = ({ user, onSuccess, initialData }: { user: any, onSucces
     setLoading(true);
     setError(null);
     try {
-      const url = initialData?.id ? `/ api / projects / ${initialData.id}` : '/api/projects';
+      const url = initialData?.id ? `/api/projects/${initialData.id}` : '/api/projects';
       const method = initialData?.id ? 'PATCH' : 'POST';
       const res = await fetch(url, {
         method,
@@ -2283,7 +2283,7 @@ const JobCreation = ({ user, onSuccess, initialData }: { user: any, onSuccess?: 
     setLoading(true);
     setError(null);
     try {
-      const url = initialData?.id ? `/ api / jobs / ${initialData.id}` : '/api/jobs';
+      const url = initialData?.id ? `/api/jobs/${initialData.id}` : '/api/jobs';
       const method = initialData?.id ? 'PATCH' : 'POST';
       const res = await fetch(url, {
         method,
@@ -2369,7 +2369,7 @@ const SettingsPage = ({ user }: { user: any }) => {
 
   useEffect(() => {
     if (user?.id) {
-      fetch(`/ api / settings / outlook / ${user.id}`)
+      fetch(`/api/settings/outlook/${user.id}`)
         .then(res => res.json())
         .then(setOutlookStatus);
     }
@@ -2378,7 +2378,7 @@ const SettingsPage = ({ user }: { user: any }) => {
   const handleConnectOutlook = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/ api / auth / outlook / url ? userId = ${user?.id}`);
+      const res = await fetch(`/api/auth/outlook/url?userId=${user?.id}`);
       const data = await res.json();
 
       if (data.url) {
@@ -2397,7 +2397,7 @@ const SettingsPage = ({ user }: { user: any }) => {
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'OUTLOOK_AUTH_SUCCESS' && user?.id) {
-        fetch(`/ api / settings / outlook / ${user.id}`)
+        fetch(`/api/settings/outlook/${user.id}`)
           .then(res => res.json())
           .then(setOutlookStatus);
       }
