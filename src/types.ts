@@ -114,6 +114,21 @@ export interface Job {
   createdAt?: string;
 }
 
+export interface Timesheet {
+  id?: string;
+  employeeId: string;
+  employeeName: string;
+  projectId: string;
+  projectName: string;
+  jobId?: string;
+  jobTitle?: string;
+  date: string;
+  hours: number;
+  description: string;
+  status: 'Draft' | 'Submitted' | 'Approved' | 'Rejected';
+  createdAt?: string;
+}
+
 export const DEPARTMENTS = [
   "Accounting",
   "Operations",

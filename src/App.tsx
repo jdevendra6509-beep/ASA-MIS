@@ -31,16 +31,47 @@ import {
   FileText,
   Building2,
   FolderKanban,
-  ClipboardList
+  ClipboardList,
+  X
 } from 'lucide-react';
-import { UserRole, Employee, DEPARTMENTS, ProjectStatus, JobStatus, JobPriority } from './types';
+import { UserRole, Employee, DEPARTMENTS, ProjectStatus, JobStatus, JobPriority, Timesheet } from './types';
 import { cn } from './lib/utils';
 import { GoogleGenAI } from "@google/genai";
+import * as XLSX from 'xlsx';
 
 const ai = new (GoogleGenAI as any)({
   apiKey: process.env.GEMINI_API_KEY || "",
   fetch: (...args: any[]) => (window.fetch as any)(...args)
 });
+
+// --- Excel Utilities ---
+const exportToExcel = (data: any[], fileName: string) => {
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Data");
+  XLSX.writeFile(wb, `${fileName}.xlsx`);
+};
+
+const downloadTemplate = (columns: string[], fileName: string) => {
+  const templateData = [columns.reduce((acc, col) => ({ ...acc, [col]: "" }), {})];
+  const ws = XLSX.utils.json_to_sheet(templateData);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Template");
+  XLSX.writeFile(wb, `${fileName}_template.xlsx`);
+};
+
+const importFromExcel = (file: File, callback: (data: any[]) => void) => {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const bstr = e.target?.result;
+    const wb = XLSX.read(bstr, { type: 'binary' });
+    const wsname = wb.SheetNames[0];
+    const ws = wb.Sheets[wsname];
+    const data = XLSX.utils.sheet_to_json(ws);
+    callback(data);
+  };
+  reader.readAsBinaryString(file);
+};
 
 // --- Components ---
 
@@ -49,11 +80,11 @@ const Sidebar = ({ onLogout }: { onLogout: () => void }) => {
 
   const menuItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
-    { icon: UserPlus, label: 'Employee Creation', path: '/employees/create' },
-    { icon: Building2, label: 'Client Creation', path: '/clients/create' },
-    { icon: FolderKanban, label: 'Project Creation', path: '/projects/create' },
-    { icon: ClipboardList, label: 'Job Creation', path: '/jobs/create' },
-    { icon: Users, label: 'Employee List', path: '/employees' },
+    { icon: Users, label: 'Employee Master', path: '/employees' },
+    { icon: Building2, label: 'Client Master', path: '/clients' },
+    { icon: FolderKanban, label: 'Project Master', path: '/projects' },
+    { icon: ClipboardList, label: 'Job Master', path: '/jobs' },
+    { icon: Calendar, label: 'Timesheet Entry', path: '/timesheets' },
     { icon: Settings, label: 'System Setup', path: '/settings' },
   ];
 
@@ -108,17 +139,44 @@ const Header = ({ title, user }: { title: string, user: any }) => (
   </header>
 );
 
+const Modal = ({ isOpen, onClose, title, children }: { isOpen: boolean, onClose: () => void, title: string, children: React.ReactNode }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-900/60 backdrop-blur-sm transition-all duration-300 animate-in fade-in">
+      <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl border border-zinc-200 animate-in zoom-in-95 duration-200">
+        <div className="px-8 py-6 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/50">
+          <h3 className="text-xl font-bold text-zinc-900">{title}</h3>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-zinc-200 rounded-full transition-colors text-zinc-400 hover:text-zinc-600"
+          >
+            <X size={20} />
+          </button>
+        </div>
+        <div className="overflow-y-auto p-0 max-h-[calc(90vh-80px)]">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // --- Pages ---
 
-const EmployeeList = () => {
+const EmployeeMaster = ({ user }: { user: any }) => {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDept, setFilterDept] = useState('All');
   const [filterRole, setFilterRole] = useState('All');
-  const navigate = useNavigate();
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [actionMenuId, setActionMenuId] = useState<string | null>(null);
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
 
-  useEffect(() => {
+  const fetchEmployees = () => {
+    setLoading(true);
     fetch('/api/employees')
       .then(res => res.json())
       .then(data => {
@@ -129,6 +187,10 @@ const EmployeeList = () => {
         console.error(err);
         setLoading(false);
       });
+  };
+
+  useEffect(() => {
+    fetchEmployees();
   }, []);
 
   const filteredEmployees = employees.filter(emp => {
@@ -145,14 +207,125 @@ const EmployeeList = () => {
           <h3 className="text-2xl font-bold text-zinc-900">Employee Directory</h3>
           <p className="text-zinc-500 text-sm">Manage and view all registered employees in the system.</p>
         </div>
-        <button
-          onClick={() => navigate('/employees/create')}
-          className="flex items-center gap-2 px-6 py-3 bg-zinc-900 text-white rounded-xl font-semibold hover:bg-zinc-800 transition-all shadow-lg shadow-zinc-200"
-        >
-          <UserPlus size={18} />
-          <span>Add New Employee</span>
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => exportToExcel(employees, "Employees")}
+            className="flex items-center gap-2 px-4 py-2.5 bg-white text-zinc-700 border border-zinc-200 rounded-xl font-semibold hover:bg-zinc-50 transition-all text-sm"
+          >
+            <Upload size={16} className="rotate-180" />
+            <span>Export</span>
+          </button>
+          <div className="relative group">
+            <button
+              className="flex items-center gap-2 px-4 py-2.5 bg-white text-zinc-700 border border-zinc-200 rounded-xl font-semibold hover:bg-zinc-50 transition-all text-sm"
+            >
+              <Upload size={16} />
+              <span>Import</span>
+            </button>
+            <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-xl border border-zinc-200 py-2 hidden group-hover:block z-50">
+              <button
+                onClick={() => downloadTemplate(["firstName", "lastName", "email", "designation", "dateOfJoining", "role", "department", "reportingPartner", "reportingManager"], "Employee")}
+                className="w-full px-4 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50 flex items-center gap-2"
+              >
+                <FileText size={14} /> Download Template
+              </button>
+              <label className="w-full px-4 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50 flex items-center gap-2 cursor-pointer">
+                <Upload size={14} /> Upload Data
+                <input
+                  type="file"
+                  accept=".xlsx, .xls, .csv"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      importFromExcel(file, async (data) => {
+                        // Bulk import logic
+                        for (const row of data) {
+                          await fetch('/api/employees', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(row)
+                          });
+                        }
+                        fetchEmployees();
+                      });
+                    }
+                  }}
+                />
+              </label>
+            </div>
+          </div>
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="flex items-center gap-2 px-6 py-3 bg-zinc-900 text-white rounded-xl font-semibold hover:bg-zinc-800 transition-all shadow-lg shadow-zinc-200"
+          >
+            <UserPlus size={18} />
+            <span>Add New Employee</span>
+          </button>
+        </div>
       </div>
+
+      <Modal
+        isOpen={isModalOpen || !!editingEmployee}
+        onClose={() => {
+          setIsModalOpen(false);
+          setEditingEmployee(null);
+        }}
+        title={editingEmployee ? "Edit Employee" : "Add New Employee"}
+      >
+        <EmployeeCreation
+          user={user}
+          initialData={editingEmployee || undefined}
+          onSuccess={() => {
+            setIsModalOpen(false);
+            setEditingEmployee(null);
+            fetchEmployees();
+          }}
+        />
+      </Modal>
+
+      <Modal
+        isOpen={!!viewingEmployee}
+        onClose={() => setViewingEmployee(null)}
+        title="Employee Details"
+      >
+        {viewingEmployee && (
+          <div className="p-8 space-y-6">
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <label className="text-xs font-bold text-zinc-400 uppercase">First Name</label>
+                <p className="text-zinc-900 font-medium">{viewingEmployee.firstName}</p>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-zinc-400 uppercase">Last Name</label>
+                <p className="text-zinc-900 font-medium">{viewingEmployee.lastName}</p>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-zinc-400 uppercase">Email</label>
+                <p className="text-zinc-900 font-medium">{viewingEmployee.email}</p>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-zinc-400 uppercase">Employee Code</label>
+                <p className="text-zinc-900 font-mono">{viewingEmployee.employeeCode}</p>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-zinc-400 uppercase">Role</label>
+                <p className="text-zinc-900">{viewingEmployee.role}</p>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-zinc-400 uppercase">Department</label>
+                <p className="text-zinc-900">{viewingEmployee.department}</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setViewingEmployee(null)}
+              className="w-full py-3 bg-zinc-900 text-white rounded-xl font-semibold"
+            >
+              Close Details
+            </button>
+          </div>
+        )}
+      </Modal>
 
       {/* Filters */}
       <div className="bg-white p-4 rounded-2xl border border-zinc-200 shadow-sm mb-6 flex flex-wrap items-center gap-4">
@@ -197,7 +370,7 @@ const EmployeeList = () => {
 
       {/* Table */}
       <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto pb-32">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-zinc-50/50 border-b border-zinc-100">
@@ -264,10 +437,40 @@ const EmployeeList = () => {
                     <td className="px-6 py-4 text-sm text-zinc-500">
                       {new Date(emp.dateOfJoining).toLocaleDateString()}
                     </td>
-                    <td className="px-6 py-4 text-right">
-                      <button className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-600 transition-colors">
+                    <td className="px-6 py-4 text-right relative">
+                      <button
+                        onClick={() => setActionMenuId(actionMenuId === emp.id ? null : (emp.id || null))}
+                        className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-600 transition-colors"
+                      >
                         <MoreHorizontal size={18} />
                       </button>
+
+                      {actionMenuId === emp.id && (
+                        <div className="absolute right-0 top-10 w-48 bg-white rounded-xl shadow-2xl border border-zinc-200 z-50 py-2 animate-in fade-in slide-in-from-top-2 duration-200 origin-top-right">
+                          <button
+                            onClick={() => {
+                              setViewingEmployee(emp);
+                              setActionMenuId(null);
+                            }}
+                            className="w-full px-4 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50 flex items-center gap-2"
+                          >
+                            <Eye size={14} /> View Details
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditingEmployee(emp);
+                              setActionMenuId(null);
+                            }}
+                            className="w-full px-4 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50 flex items-center gap-2"
+                          >
+                            <Settings size={14} /> Edit Employee
+                          </button>
+                          <div className="border-t border-zinc-100 my-1" />
+                          <button className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2">
+                            <LogOut size={14} /> Deactivate
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -283,6 +486,998 @@ const EmployeeList = () => {
             <button disabled className="px-3 py-1.5 text-xs font-semibold text-zinc-400 border border-zinc-200 rounded-lg bg-white opacity-50">Previous</button>
             <button disabled className="px-3 py-1.5 text-xs font-semibold text-zinc-400 border border-zinc-200 rounded-lg bg-white opacity-50">Next</button>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ClientMaster = ({ user }: { user: any }) => {
+  const [clients, setClients] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [actionMenuId, setActionMenuId] = useState<string | null>(null);
+  const [editingClient, setEditingClient] = useState<any | null>(null);
+  const [viewingClient, setViewingClient] = useState<any | null>(null);
+
+  const fetchClients = () => {
+    setLoading(true);
+    fetch('/api/clients')
+      .then(res => res.json())
+      .then(data => {
+        setClients(data);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error(err);
+        setLoading(false);
+      });
+  };
+
+  useEffect(() => {
+    fetchClients();
+  }, []);
+
+  const filteredClients = clients.filter(c =>
+    (c.name + ' ' + (c.email || '')).toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  return (
+    <div className="p-8">
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h3 className="text-2xl font-bold text-zinc-900">Client Master</h3>
+          <p className="text-zinc-500 text-sm">Manage your business clients and their contact information.</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => exportToExcel(clients, "Clients")}
+            className="flex items-center gap-2 px-4 py-2.5 bg-white text-zinc-700 border border-zinc-200 rounded-xl font-semibold hover:bg-zinc-50 transition-all text-sm"
+          >
+            <Upload size={16} className="rotate-180" />
+            <span>Export</span>
+          </button>
+          <div className="relative group">
+            <button
+              className="flex items-center gap-2 px-4 py-2.5 bg-white text-zinc-700 border border-zinc-200 rounded-xl font-semibold hover:bg-zinc-50 transition-all text-sm"
+            >
+              <Upload size={16} />
+              <span>Import</span>
+            </button>
+            <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-xl border border-zinc-200 py-2 hidden group-hover:block z-50">
+              <button
+                onClick={() => downloadTemplate(["name", "email", "phone", "address", "gstNumber", "panNumber"], "Client")}
+                className="w-full px-4 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50 flex items-center gap-2"
+              >
+                <FileText size={14} /> Download Template
+              </button>
+              <label className="w-full px-4 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50 flex items-center gap-2 cursor-pointer">
+                <Upload size={14} /> Upload Data
+                <input
+                  type="file"
+                  accept=".xlsx, .xls, .csv"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      importFromExcel(file, async (data) => {
+                        for (const row of data) {
+                          await fetch('/api/clients', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(row)
+                          });
+                        }
+                        fetchClients();
+                      });
+                    }
+                  }}
+                />
+              </label>
+            </div>
+          </div>
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="flex items-center gap-2 px-6 py-3 bg-zinc-900 text-white rounded-xl font-semibold hover:bg-zinc-800 transition-all shadow-lg shadow-zinc-200"
+          >
+            <Building2 size={18} />
+            <span>Add New Client</span>
+          </button>
+        </div>
+      </div>
+
+      <Modal
+        isOpen={isModalOpen || !!editingClient}
+        onClose={() => {
+          setIsModalOpen(false);
+          setEditingClient(null);
+        }}
+        title={editingClient ? "Edit Client" : "Add New Client"}
+      >
+        <ClientCreation
+          user={user}
+          initialData={editingClient || undefined}
+          onSuccess={() => {
+            setIsModalOpen(false);
+            setEditingClient(null);
+            fetchClients();
+          }}
+        />
+      </Modal>
+
+      <Modal
+        isOpen={!!viewingClient}
+        onClose={() => setViewingClient(null)}
+        title="Client Details"
+      >
+        {viewingClient && (
+          <div className="p-8 space-y-6">
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <label className="text-xs font-bold text-zinc-400 uppercase">Client Name</label>
+                <p className="text-zinc-900 font-medium">{viewingClient.name}</p>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-zinc-400 uppercase">Email</label>
+                <p className="text-zinc-900 font-medium">{viewingClient.email}</p>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-zinc-400 uppercase">Phone</label>
+                <p className="text-zinc-900">{viewingClient.phone}</p>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-zinc-400 uppercase">GST Number</label>
+                <p className="text-zinc-900 font-mono">{viewingClient.gstNumber || 'N/A'}</p>
+              </div>
+            </div>
+            <button onClick={() => setViewingClient(null)} className="w-full py-3 bg-zinc-900 text-white rounded-xl font-semibold">Close Details</button>
+          </div>
+        )}
+      </Modal>
+
+      <div className="bg-white p-4 rounded-2xl border border-zinc-200 shadow-sm mb-6">
+        <div className="relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+          <input
+            type="text"
+            placeholder="Search by client name or email..."
+            className="w-full pl-12 pr-4 py-2.5 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
+        <div className="overflow-x-auto pb-32">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-zinc-50/50 border-b border-zinc-100">
+                <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Client Name</th>
+                <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Contact</th>
+                <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">GST/PAN</th>
+                <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {loading ? (
+                <tr><td colSpan={4} className="px-6 py-12 text-center text-zinc-500">Loading...</td></tr>
+              ) : filteredClients.length === 0 ? (
+                <tr><td colSpan={4} className="px-6 py-12 text-center text-zinc-500">No clients found.</td></tr>
+              ) : (
+                filteredClients.map((client) => (
+                  <tr key={client.id} className="hover:bg-zinc-50/50 transition-colors group">
+                    <td className="px-6 py-4">
+                      <p className="text-sm font-semibold text-zinc-900">{client.name}</p>
+                      <p className="text-xs text-zinc-500">{client.address}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="text-sm text-zinc-600 font-medium">{client.email}</p>
+                      <p className="text-xs text-zinc-500">{client.phone}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="text-xs font-medium text-zinc-600">GST: {client.gst || 'N/A'}</p>
+                      <p className="text-xs font-medium text-zinc-600">PAN: {client.pan || 'N/A'}</p>
+                    </td>
+                    <td className="px-6 py-4 text-right relative">
+                      <button
+                        onClick={() => setActionMenuId(actionMenuId === client.id ? null : client.id)}
+                        className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-600 transition-colors"
+                      >
+                        <MoreHorizontal size={18} />
+                      </button>
+                      {actionMenuId === client.id && (
+                        <div className="absolute right-0 top-10 w-48 bg-white rounded-xl shadow-2xl border border-zinc-200 z-50 py-2 animate-in fade-in slide-in-from-top-2 duration-200 origin-top-right">
+                          <button
+                            onClick={() => {
+                              setViewingClient(client);
+                              setActionMenuId(null);
+                            }}
+                            className="w-full px-4 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50 flex items-center gap-2"
+                          >
+                            <Eye size={14} /> View Details
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditingClient(client);
+                              setActionMenuId(null);
+                            }}
+                            className="w-full px-4 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50 flex items-center gap-2"
+                          >
+                            <Settings size={14} /> Edit Client
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ProjectMaster = ({ user }: { user: any }) => {
+  const [projects, setProjects] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [actionMenuId, setActionMenuId] = useState<string | null>(null);
+  const [editingProject, setEditingProject] = useState<any | null>(null);
+  const [viewingProject, setViewingProject] = useState<any | null>(null);
+
+  const fetchProjects = () => {
+    setLoading(true);
+    fetch('/api/projects')
+      .then(res => res.json())
+      .then(data => {
+        setProjects(data);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error(err);
+        setLoading(false);
+      });
+  };
+
+  useEffect(() => {
+    fetchProjects();
+  }, []);
+
+  const filteredProjects = projects.filter(p =>
+    (p.name + ' ' + (p.clientName || '')).toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  return (
+    <div className="p-8">
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h3 className="text-2xl font-bold text-zinc-900">Project Master</h3>
+          <p className="text-zinc-500 text-sm">Organize and manage projects across your client base.</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => exportToExcel(projects, "Projects")}
+            className="flex items-center gap-2 px-4 py-2.5 bg-white text-zinc-700 border border-zinc-200 rounded-xl font-semibold hover:bg-zinc-50 transition-all text-sm"
+          >
+            <Upload size={16} className="rotate-180" />
+            <span>Export</span>
+          </button>
+          <div className="relative group">
+            <button
+              className="flex items-center gap-2 px-4 py-2.5 bg-white text-zinc-700 border border-zinc-200 rounded-xl font-semibold hover:bg-zinc-50 transition-all text-sm"
+            >
+              <Upload size={16} />
+              <span>Import</span>
+            </button>
+            <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-xl border border-zinc-200 py-2 hidden group-hover:block z-50">
+              <button
+                onClick={() => downloadTemplate(["name", "clientId", "description", "managerId", "startDate", "endDate", "status"], "Project")}
+                className="w-full px-4 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50 flex items-center gap-2"
+              >
+                <FileText size={14} /> Download Template
+              </button>
+              <label className="w-full px-4 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50 flex items-center gap-2 cursor-pointer">
+                <Upload size={14} /> Upload Data
+                <input
+                  type="file"
+                  accept=".xlsx, .xls, .csv"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      importFromExcel(file, async (data) => {
+                        for (const row of data) {
+                          await fetch('/api/projects', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(row)
+                          });
+                        }
+                        fetchProjects();
+                      });
+                    }
+                  }}
+                />
+              </label>
+            </div>
+          </div>
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="flex items-center gap-2 px-6 py-3 bg-zinc-900 text-white rounded-xl font-semibold hover:bg-zinc-800 transition-all shadow-lg shadow-zinc-200"
+          >
+            <FolderKanban size={18} />
+            <span>Add New Project</span>
+          </button>
+        </div>
+      </div>
+
+      <Modal
+        isOpen={isModalOpen || !!editingProject}
+        onClose={() => {
+          setIsModalOpen(false);
+          setEditingProject(null);
+        }}
+        title={editingProject ? "Edit Project" : "Add New Project"}
+      >
+        <ProjectCreation
+          user={user}
+          initialData={editingProject || undefined}
+          onSuccess={() => {
+            setIsModalOpen(false);
+            setEditingProject(null);
+            fetchProjects();
+          }}
+        />
+      </Modal>
+
+      <Modal
+        isOpen={!!viewingProject}
+        onClose={() => setViewingProject(null)}
+        title="Project Details"
+      >
+        {viewingProject && (
+          <div className="p-8 space-y-6">
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <label className="text-xs font-bold text-zinc-400 uppercase">Project Name</label>
+                <p className="text-zinc-900 font-medium">{viewingProject.name}</p>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-zinc-400 uppercase">Client</label>
+                <p className="text-zinc-900">{viewingProject.clientName}</p>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-zinc-400 uppercase">Status</label>
+                <p className="text-zinc-900">{viewingProject.status}</p>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-zinc-400 uppercase">Manager</label>
+                <p className="text-zinc-900">{viewingProject.managerName}</p>
+              </div>
+            </div>
+            <button onClick={() => setViewingProject(null)} className="w-full py-3 bg-zinc-900 text-white rounded-xl font-semibold">Close Details</button>
+          </div>
+        )}
+      </Modal>
+
+      <div className="bg-white p-4 rounded-2xl border border-zinc-200 shadow-sm mb-6">
+        <div className="relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+          <input
+            type="text"
+            placeholder="Search by project name or client..."
+            className="w-full pl-12 pr-4 py-2.5 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
+        <div className="overflow-x-auto pb-32">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-zinc-50/50 border-b border-zinc-100">
+                <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Project</th>
+                <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Client</th>
+                <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Manager</th>
+                <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {loading ? (
+                <tr><td colSpan={5} className="px-6 py-12 text-center text-zinc-500">Loading projects...</td></tr>
+              ) : filteredProjects.length === 0 ? (
+                <tr><td colSpan={5} className="px-6 py-12 text-center text-zinc-500">No projects found.</td></tr>
+              ) : (
+                filteredProjects.map((proj) => (
+                  <tr key={proj.id} className="hover:bg-zinc-50/50 transition-colors">
+                    <td className="px-6 py-4">
+                      <p className="text-sm font-semibold text-zinc-900">{proj.name}</p>
+                      <p className="text-xs text-zinc-500">Code: {proj.code}</p>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-zinc-600">{proj.clientName}</td>
+                    <td className="px-6 py-4 text-sm text-zinc-600">{proj.managerId}</td>
+                    <td className="px-6 py-4">
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-100">
+                        {proj.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right relative">
+                      <button
+                        onClick={() => setActionMenuId(actionMenuId === proj.id ? null : proj.id)}
+                        className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-600 transition-colors"
+                      >
+                        <MoreHorizontal size={18} />
+                      </button>
+                      {actionMenuId === proj.id && (
+                        <div className="absolute right-0 top-10 w-48 bg-white rounded-xl shadow-2xl border border-zinc-200 z-50 py-2 animate-in fade-in slide-in-from-top-2 duration-200 origin-top-right">
+                          <button
+                            onClick={() => {
+                              setViewingProject(proj);
+                              setActionMenuId(null);
+                            }}
+                            className="w-full px-4 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50 flex items-center gap-2"
+                          >
+                            <Eye size={14} /> View Details
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditingProject(proj);
+                              setActionMenuId(null);
+                            }}
+                            className="w-full px-4 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50 flex items-center gap-2"
+                          >
+                            <Settings size={14} /> Edit Project
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const JobMaster = ({ user }: { user: any }) => {
+  const [jobs, setJobs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [actionMenuId, setActionMenuId] = useState<string | null>(null);
+  const [editingJob, setEditingJob] = useState<any | null>(null);
+  const [viewingJob, setViewingJob] = useState<any | null>(null);
+
+  const fetchJobs = () => {
+    setLoading(true);
+    fetch('/api/jobs')
+      .then(res => res.json())
+      .then(data => {
+        setJobs(data);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error(err);
+        setLoading(false);
+      });
+  };
+
+  useEffect(() => {
+    fetchJobs();
+  }, []);
+
+  const filteredJobs = jobs.filter(j =>
+    (j.title + ' ' + (j.projectName || '')).toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  return (
+    <div className="p-8">
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h3 className="text-2xl font-bold text-zinc-900">Job Master</h3>
+          <p className="text-zinc-500 text-sm">Track and assign specific tasks and jobs within projects.</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => exportToExcel(jobs, "Jobs")}
+            className="flex items-center gap-2 px-4 py-2.5 bg-white text-zinc-700 border border-zinc-200 rounded-xl font-semibold hover:bg-zinc-50 transition-all text-sm"
+          >
+            <Upload size={16} className="rotate-180" />
+            <span>Export</span>
+          </button>
+          <div className="relative group">
+            <button
+              className="flex items-center gap-2 px-4 py-2.5 bg-white text-zinc-700 border border-zinc-200 rounded-xl font-semibold hover:bg-zinc-50 transition-all text-sm"
+            >
+              <Upload size={16} />
+              <span>Import</span>
+            </button>
+            <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-xl border border-zinc-200 py-2 hidden group-hover:block z-50">
+              <button
+                onClick={() => downloadTemplate(["title", "projectId", "description", "assigneeId", "dueDate", "status", "priority"], "Job")}
+                className="w-full px-4 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50 flex items-center gap-2"
+              >
+                <FileText size={14} /> Download Template
+              </button>
+              <label className="w-full px-4 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50 flex items-center gap-2 cursor-pointer">
+                <Upload size={14} /> Upload Data
+                <input
+                  type="file"
+                  accept=".xlsx, .xls, .csv"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      importFromExcel(file, async (data) => {
+                        for (const row of data) {
+                          await fetch('/api/jobs', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(row)
+                          });
+                        }
+                        fetchJobs();
+                      });
+                    }
+                  }}
+                />
+              </label>
+            </div>
+          </div>
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="flex items-center gap-2 px-6 py-3 bg-zinc-900 text-white rounded-xl font-semibold hover:bg-zinc-800 transition-all shadow-lg shadow-zinc-200"
+          >
+            <ClipboardList size={18} />
+            <span>Add New Job</span>
+          </button>
+        </div>
+      </div>
+
+      <Modal
+        isOpen={isModalOpen || !!editingJob}
+        onClose={() => {
+          setIsModalOpen(false);
+          setEditingJob(null);
+        }}
+        title={editingJob ? "Edit Job" : "Add New Job"}
+      >
+        <JobCreation
+          user={user}
+          initialData={editingJob || undefined}
+          onSuccess={() => {
+            setIsModalOpen(false);
+            setEditingJob(null);
+            fetchJobs();
+          }}
+        />
+      </Modal>
+
+      <Modal
+        isOpen={!!viewingJob}
+        onClose={() => setViewingJob(null)}
+        title="Job Details"
+      >
+        {viewingJob && (
+          <div className="p-8 space-y-6">
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <label className="text-xs font-bold text-zinc-400 uppercase">Job Title</label>
+                <p className="text-zinc-900 font-medium">{viewingJob.title}</p>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-zinc-400 uppercase">Project</label>
+                <p className="text-zinc-900">{viewingJob.projectName}</p>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-zinc-400 uppercase">Assignee</label>
+                <p className="text-zinc-900">{viewingJob.assigneeName}</p>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-zinc-400 uppercase">Status</label>
+                <p className="text-zinc-900">{viewingJob.status}</p>
+              </div>
+            </div>
+            <button onClick={() => setViewingJob(null)} className="w-full py-3 bg-zinc-900 text-white rounded-xl font-semibold">Close Details</button>
+          </div>
+        )}
+      </Modal>
+
+      <div className="bg-white p-4 rounded-2xl border border-zinc-200 shadow-sm mb-6">
+        <div className="relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+          <input
+            type="text"
+            placeholder="Search by job title or project..."
+            className="w-full pl-12 pr-4 py-2.5 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
+        <div className="overflow-x-auto pb-32">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-zinc-50/50 border-b border-zinc-100">
+                <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Job Title</th>
+                <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Project</th>
+                <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Priority</th>
+                <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {loading ? (
+                <tr><td colSpan={5} className="px-6 py-12 text-center text-zinc-500">Loading jobs...</td></tr>
+              ) : filteredJobs.length === 0 ? (
+                <tr><td colSpan={5} className="px-6 py-12 text-center text-zinc-500">No jobs found.</td></tr>
+              ) : (
+                filteredJobs.map((job) => (
+                  <tr key={job.id} className="hover:bg-zinc-50/50 transition-colors">
+                    <td className="px-6 py-4">
+                      <p className="text-sm font-semibold text-zinc-900">{job.title}</p>
+                      <p className="text-xs text-zinc-500">{job.description?.substring(0, 40)}...</p>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-zinc-600">{job.projectName}</td>
+                    <td className="px-6 py-4">
+                      <span className={cn(
+                        "text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-full border",
+                        job.priority === 'High' ? "bg-red-50 text-red-700 border-red-100" : "bg-zinc-50 text-zinc-700 border-zinc-100"
+                      )}>
+                        {job.priority}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">
+                        {job.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right relative">
+                      <button
+                        onClick={() => setActionMenuId(actionMenuId === job.id ? null : job.id)}
+                        className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-600 transition-colors"
+                      >
+                        <MoreHorizontal size={18} />
+                      </button>
+                      {actionMenuId === job.id && (
+                        <div className="absolute right-0 top-10 w-48 bg-white rounded-xl shadow-2xl border border-zinc-200 z-50 py-2 animate-in fade-in slide-in-from-top-2 duration-200 origin-top-right">
+                          <button
+                            onClick={() => {
+                              setViewingJob(job);
+                              setActionMenuId(null);
+                            }}
+                            className="w-full px-4 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50 flex items-center gap-2"
+                          >
+                            <Eye size={14} /> View Details
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditingJob(job);
+                              setActionMenuId(null);
+                            }}
+                            className="w-full px-4 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50 flex items-center gap-2"
+                          >
+                            <Settings size={14} /> Edit Job
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const TimesheetEntry = ({ user }: { user: any }) => {
+  const [timesheets, setTimesheets] = useState<Timesheet[]>([]);
+  const [clients, setClients] = useState<any[]>([]);
+  const [projects, setProjects] = useState<any[]>([]);
+  const [jobs, setJobs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [formData, setFormData] = useState<any>({
+    date: new Date().toISOString().split('T')[0],
+    hours: 8,
+    status: 'Draft',
+    employeeId: user?.id || user?.employeeCode,
+    clientId: '',
+    projectId: '',
+    jobId: '',
+    description: ''
+  });
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const [tsRes, clRes, projRes, jobRes] = await Promise.all([
+        fetch('/api/timesheets'),
+        fetch('/api/clients'),
+        fetch('/api/projects'),
+        fetch('/api/jobs')
+      ]);
+      const [tsData, clData, projData, jobData] = await Promise.all([
+        tsRes.json(),
+        clRes.json(),
+        projRes.json(),
+        jobRes.json()
+      ]);
+      setTimesheets(tsData);
+      setClients(clData);
+      setProjects(projData);
+      setJobs(jobData);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.projectId || !formData.date || !formData.hours || !formData.jobId) {
+      alert("Please fill all required fields");
+      return;
+    }
+
+    const project = projects.find(p => p.id === formData.projectId);
+    const job = jobs.find(j => j.id === formData.jobId);
+    const client = clients.find(c => c.id === formData.clientId);
+
+    const submission = {
+      ...formData,
+      employeeId: user?.id || user?.employeeCode,
+      employeeName: `${user?.firstName} ${user?.lastName}`,
+      projectName: project?.name,
+      jobTitle: job?.title,
+      clientName: client?.name
+    };
+
+    try {
+      const res = await fetch('/api/timesheets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(submission)
+      });
+      if (res.ok) {
+        setIsModalOpen(false);
+        fetchData();
+        setFormData({
+          date: new Date().toISOString().split('T')[0],
+          hours: 8,
+          status: 'Draft',
+          employeeId: user?.id || user?.employeeCode,
+          clientId: '',
+          projectId: '',
+          jobId: '',
+          description: ''
+        });
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const filteredProjects = projects.filter(p => p.clientId === formData.clientId);
+  const filteredJobs = jobs.filter(j => j.projectId === formData.projectId);
+
+  return (
+    <div className="p-8">
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h3 className="text-2xl font-bold text-zinc-900">Timesheet Entry</h3>
+          <p className="text-zinc-500 text-sm">Log and track daily work hours across different projects.</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => exportToExcel(timesheets, "Timesheets")}
+            className="flex items-center gap-2 px-4 py-2.5 bg-white text-zinc-700 border border-zinc-200 rounded-xl font-semibold hover:bg-zinc-50 transition-all text-sm"
+          >
+            <Upload size={16} className="rotate-180" />
+            <span>Export Excel</span>
+          </button>
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="flex items-center gap-2 px-6 py-3 bg-zinc-900 text-white rounded-xl font-semibold hover:bg-zinc-800 transition-all shadow-lg shadow-zinc-200"
+          >
+            <Calendar size={18} />
+            <span>New Entry</span>
+          </button>
+        </div>
+      </div>
+
+      <Modal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        title="Log Work Hours"
+      >
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2 col-span-2">
+              <label className="text-sm font-medium text-zinc-700">Employee</label>
+              <input
+                type="text"
+                className="w-full px-4 py-2.5 rounded-xl border border-zinc-100 bg-zinc-50 text-zinc-500 outline-none cursor-not-allowed"
+                value={`${user?.firstName} ${user?.lastName}`}
+                disabled
+                readOnly
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-zinc-700">Client</label>
+              <select
+                className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none"
+                value={formData.clientId}
+                onChange={e => setFormData({ ...formData, clientId: e.target.value, projectId: '', jobId: '' })}
+                required
+              >
+                <option value="">Select Client</option>
+                {clients.map(cl => (
+                  <option key={cl.id} value={cl.id}>{cl.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-zinc-700">Project</label>
+              <select
+                className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none disabled:bg-zinc-50 disabled:text-zinc-400"
+                value={formData.projectId}
+                onChange={e => setFormData({ ...formData, projectId: e.target.value, jobId: '' })}
+                required
+                disabled={!formData.clientId}
+              >
+                <option value="">Select Project</option>
+                {filteredProjects.map(proj => (
+                  <option key={proj.id} value={proj.id}>{proj.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-zinc-700">Job</label>
+              <select
+                className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none disabled:bg-zinc-50 disabled:text-zinc-400"
+                value={formData.jobId}
+                onChange={e => setFormData({ ...formData, jobId: e.target.value })}
+                required
+                disabled={!formData.projectId}
+              >
+                <option value="">Select Job</option>
+                {filteredJobs.map(job => (
+                  <option key={job.id} value={job.id}>{job.title}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-zinc-700">Date</label>
+              <input
+                type="date"
+                className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none"
+                value={formData.date}
+                onChange={e => setFormData({ ...formData, date: e.target.value })}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-zinc-700">Hours</label>
+              <input
+                type="number"
+                step="0.5"
+                className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none"
+                value={formData.hours}
+                onChange={e => setFormData({ ...formData, hours: parseFloat(e.target.value) })}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-zinc-700">Status</label>
+              <select
+                className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none"
+                value={formData.status}
+                onChange={e => setFormData({ ...formData, status: e.target.value as any })}
+              >
+                <option value="Draft">Draft</option>
+                <option value="Submitted">Submitted</option>
+              </select>
+            </div>
+            <div className="space-y-2 col-span-2">
+              <label className="text-sm font-medium text-zinc-700">Work Description</label>
+              <textarea
+                className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none h-24 resize-none"
+                placeholder="Describe what you worked on..."
+                value={formData.description}
+                onChange={e => setFormData({ ...formData, description: e.target.value })}
+                required
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-3 mt-8">
+            <button
+              type="button"
+              onClick={() => setIsModalOpen(false)}
+              className="px-6 py-2.5 text-sm font-semibold text-zinc-600 hover:bg-zinc-50 rounded-xl transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-8 py-2.5 text-sm font-semibold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl transition-all shadow-lg shadow-zinc-200"
+            >
+              Save Entry
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-zinc-50/50 border-b border-zinc-100">
+                <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Date</th>
+                <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Employee</th>
+                <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Client & Project</th>
+                <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Job</th>
+                <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Hours</th>
+                <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {loading ? (
+                <tr><td colSpan={6} className="px-6 py-12 text-center text-zinc-500">Loading timesheets...</td></tr>
+              ) : timesheets.length === 0 ? (
+                <tr><td colSpan={6} className="px-6 py-12 text-center text-zinc-500">No entries recorded yet.</td></tr>
+              ) : (
+                timesheets.map((ts) => (
+                  <tr key={ts.id} className="hover:bg-zinc-50/50 transition-colors group">
+                    <td className="px-6 py-4 text-sm font-medium text-zinc-900">{ts.date}</td>
+                    <td className="px-6 py-4 text-sm text-zinc-600">{ts.employeeName}</td>
+                    <td className="px-6 py-4 text-sm text-zinc-600">
+                      <div className="font-medium text-zinc-900">{(ts as any).clientName}</div>
+                      <div className="text-xs text-zinc-400">{ts.projectName}</div>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-zinc-600">{ts.jobTitle || 'N/A'}</td>
+                    <td className="px-6 py-4 text-sm font-semibold text-zinc-900">{ts.hours}h</td>
+                    <td className="px-6 py-4">
+                      <span className={cn(
+                        "text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-full border",
+                        ts.status === 'Approved' ? "bg-emerald-50 text-emerald-700 border-emerald-100" :
+                          ts.status === 'Submitted' ? "bg-blue-50 text-blue-700 border-blue-100" :
+                            "bg-zinc-50 text-zinc-700 border-zinc-100"
+                      )}>
+                        {ts.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <button className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-600 transition-colors">
+                        <MoreHorizontal size={18} />
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -399,8 +1594,22 @@ const PermissionsManager = () => {
   const [permissions, setPermissions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const roles = ["Master Admin", "Admin", "Owner", "Partner", "Manager", "Employee"];
-  const permissionTypes = ["view_dashboard", "create_employee", "view_employee_list", "manage_settings", "view_reports"];
+  const roles = [
+    { key: "MASTER_ADMIN", label: "MASTER ADMIN" },
+    { key: "ADMIN", label: "ADMIN" },
+    { key: "OWNER", label: "OWNER" },
+    { key: "PARTNER", label: "PARTNER" },
+    { key: "MANAGER", label: "MANAGER" },
+    { key: "EMPLOYEE", label: "EMPLOYEE" }
+  ];
+
+  const permissionTypes = [
+    { key: "view_dashboard", label: "View Dashboard" },
+    { key: "create_employee", label: "Create Employee" },
+    { key: "view_employee_list", label: "View Employee List" },
+    { key: "manage_settings", label: "Manage Settings" },
+    { key: "view_reports", label: "View Reports" }
+  ];
 
   useEffect(() => {
     fetch('/api/permissions')
@@ -419,64 +1628,194 @@ const PermissionsManager = () => {
         body: JSON.stringify({ role, permission, enabled: !current }),
       });
       if (res.ok) {
-        setPermissions(prev => prev.map(p =>
-          (p.role === role && p.permission === permission) ? { ...p, enabled: !current ? 1 : 0 } : p
-        ));
+        setPermissions(prev => {
+          const exists = prev.find(p => p.role === role && p.permission === permission);
+          if (exists) {
+            return prev.map(p => (p.role === role && p.permission === permission) ? { ...p, enabled: !current ? 1 : 0 } : p);
+          } else {
+            return [...prev, { role, permission, enabled: !current ? 1 : 0 }];
+          }
+        });
       }
     } catch (err) {
       console.error(err);
     }
   };
 
+  const isEnabled = (role: string, permission: string) => {
+    return permissions.find(p => p.role === role && p.permission === permission)?.enabled === 1;
+  };
+
   if (loading) return <div className="flex justify-center p-8"><Loader2 className="animate-spin text-zinc-400" /></div>;
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-left border-collapse">
-        <thead>
-          <tr className="border-b border-zinc-100">
-            <th className="py-4 px-4 text-xs font-bold text-zinc-400 uppercase tracking-widest">Permission</th>
-            {roles.map(role => (
-              <th key={role} className="py-4 px-4 text-xs font-bold text-zinc-400 uppercase tracking-widest text-center">{role}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-zinc-50">
-          {permissionTypes.map(perm => (
-            <tr key={perm} className="hover:bg-zinc-50/50 transition-colors">
-              <td className="py-4 px-4">
-                <p className="text-sm font-semibold text-zinc-900 capitalize">{perm.replace(/_/g, ' ')}</p>
-              </td>
-              {roles.map(role => {
-                const p = permissions.find(x => x.role === role && x.permission === perm);
-                const isEnabled = p?.enabled === 1;
-                return (
-                  <td key={role} className="py-4 px-4 text-center">
-                    <button
-                      onClick={() => togglePermission(role, perm, isEnabled)}
-                      className={cn(
-                        "w-10 h-5 rounded-full transition-all relative",
-                        isEnabled ? "bg-emerald-500" : "bg-zinc-200"
-                      )}
-                    >
-                      <div className={cn(
-                        "absolute top-1 w-3 h-3 bg-white rounded-full transition-all",
-                        isEnabled ? "right-1" : "left-1"
-                      )} />
-                    </button>
-                  </td>
-                );
-              })}
+    <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden mt-8">
+      <div className="p-6 border-b border-zinc-100 pb-2">
+        <h3 className="text-xl font-bold text-zinc-900">Role Access Control</h3>
+        <p className="text-sm text-zinc-500">Manage permissions for each administrative role.</p>
+      </div>
+      <div className="overflow-x-auto p-6 pt-2">
+        <table className="w-full text-left">
+          <thead>
+            <tr className="border-b border-zinc-100">
+              <th className="py-6 px-4 text-[11px] font-bold text-zinc-400 uppercase tracking-widest">PERMISSION</th>
+              {roles.map(role => (
+                <th key={role.key} className="py-6 px-4 text-[11px] font-bold text-zinc-400 uppercase tracking-widest text-center">{role.label}</th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-zinc-50">
+            {permissionTypes.map(perm => (
+              <tr key={perm.key} className="group hover:bg-zinc-50/50 transition-colors">
+                <td className="py-6 px-4">
+                  <span className="text-sm font-bold text-zinc-700">{perm.label}</span>
+                </td>
+                {roles.map(role => {
+                  const enabled = isEnabled(role.key, perm.key);
+                  return (
+                    <td key={role.key} className="py-6 px-4 text-center">
+                      <button
+                        onClick={() => togglePermission(role.key, perm.key, enabled)}
+                        className={cn(
+                          "relative inline-flex h-6 w-11 items-center rounded-full transition-colors outline-none",
+                          enabled ? "bg-zinc-900" : "bg-zinc-200"
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                            enabled ? "translate-x-6" : "translate-x-1"
+                          )}
+                        />
+                      </button>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };
 
-const EmployeeCreation = () => {
-  const [formData, setFormData] = useState<Employee>({
+const LoginProfileManager = () => {
+  const [employees, setEmployees] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchUsers = () => {
+    setLoading(true);
+    fetch('/api/employees')
+      .then(res => res.json())
+      .then(data => {
+        setEmployees(data || []);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error(err);
+        setLoading(false);
+      });
+  };
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
+  const profiles = {
+    'Partner Login Profiles': employees.filter(e => e.role === UserRole.PARTNER || e.role === UserRole.OWNER),
+    'Manager Login Profiles': employees.filter(e => e.role === UserRole.MANAGER),
+    'User Login Profiles': employees.filter(e => e.role === UserRole.EMPLOYEE || e.role === UserRole.ADMIN),
+  };
+
+  const toggleStatus = async (user: any) => {
+    const newStatus = user.status === 'Active' ? 'Disabled' : 'Active';
+    try {
+      await fetch(`/api/users/${user.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      });
+      fetchUsers();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const resendInvite = async (user: any) => {
+    try {
+      const res = await fetch(`/api/users/${user.id}/reset-password`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        alert(`Invitation link for ${user.firstName} has been prepared. Token: ${data.token}`);
+        fetchUsers();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  return (
+    <div className="space-y-6 mt-8">
+      {Object.entries(profiles).map(([title, users]) => (
+        <div key={title} className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
+          <div className="p-6 border-b border-zinc-100 bg-zinc-50/50">
+            <h3 className="text-lg font-semibold text-zinc-900">{title}</h3>
+            <p className="text-sm text-zinc-500">Manage login credentials and access for {title.toLowerCase()}.</p>
+          </div>
+          <div className="p-0 overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-zinc-50/50 border-b border-zinc-100">
+                  <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">User</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Role</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100">
+                {loading ? (
+                  <tr><td colSpan={4} className="px-6 py-8 text-center text-zinc-500">Loading...</td></tr>
+                ) : users.length === 0 ? (
+                  <tr><td colSpan={4} className="px-6 py-8 text-center text-zinc-500">No profiles found in this category.</td></tr>
+                ) : (
+                  users.map(u => (
+                    <tr key={u.id} className="hover:bg-zinc-50/50 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="text-sm font-semibold text-zinc-900">{u.firstName} {u.lastName}</div>
+                        <div className="text-xs text-zinc-500">{u.email}</div>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-zinc-600">{u.role}</td>
+                      <td className="px-6 py-4">
+                        <span className={cn(
+                          "text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-full",
+                          u.status === 'Active' ? "bg-emerald-50 text-emerald-700 border border-emerald-100" : "bg-zinc-100 text-zinc-600 border border-zinc-200"
+                        )}>
+                          {u.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right space-x-2">
+                        <button onClick={() => toggleStatus(u)} className="text-xs font-bold text-zinc-600 hover:text-zinc-900 px-3 py-1.5 rounded-lg border border-zinc-200 bg-white shadow-sm transition-all hover:bg-zinc-50">
+                          {u.status === 'Active' ? 'Disable' : 'Enable'}
+                        </button>
+                        <button onClick={() => resendInvite(u)} className="text-xs font-bold text-emerald-600 hover:text-emerald-700 px-3 py-1.5 rounded-lg border border-emerald-100 bg-emerald-50 shadow-sm transition-all hover:bg-emerald-100/50">
+                          Re-invite
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const EmployeeCreation = ({ user, onSuccess, initialData }: { user: any, onSuccess?: () => void, initialData?: Employee }) => {
+  const [formData, setFormData] = useState<Employee>(initialData || {
     firstName: '',
     lastName: '',
     email: '',
@@ -493,6 +1832,12 @@ const EmployeeCreation = () => {
   const [success, setSuccess] = useState(false);
   const [warning, setWarning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (initialData) {
+      setFormData(initialData);
+    }
+  }, [initialData]);
 
   useEffect(() => {
     const loadDropdownData = () => {
@@ -541,10 +1886,13 @@ const EmployeeCreation = () => {
     }
 
     try {
-      const res = await fetch('/api/employees', {
-        method: 'POST',
+      const url = initialData?.id ? `/api/users/${initialData.id}` : '/api/employees';
+      const method = initialData?.id ? 'PATCH' : 'POST';
+
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({ ...formData, adminId: user?.id }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -561,6 +1909,9 @@ const EmployeeCreation = () => {
           reportingPartner: '',
           reportingManager: '',
         });
+        if (onSuccess) {
+          setTimeout(() => onSuccess(), 1500);
+        }
         setTimeout(() => setSuccess(false), 5000);
       } else {
         setError(data.error || "Failed to create employee");
@@ -577,12 +1928,8 @@ const EmployeeCreation = () => {
   const isManager = formData.role === UserRole.MANAGER;
 
   return (
-    <div className="p-8 max-w-4xl">
-      <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-zinc-100 bg-zinc-50/50">
-          <h3 className="text-lg font-semibold text-zinc-900">Employee Creation & Invite</h3>
-          <p className="text-sm text-zinc-500">Create a new employee record and trigger a registration email.</p>
-        </div>
+    <div className="bg-white">
+      <div className="p-8 space-y-6">
         <form onSubmit={handleSubmit} className="p-8 space-y-6">
           {error && (
             <div className="p-4 bg-red-50 border border-red-100 rounded-xl flex items-center gap-3 text-red-700 text-sm">
@@ -750,25 +2097,34 @@ const EmployeeCreation = () => {
   );
 };
 
-const ClientCreation = () => {
-  const [formData, setFormData] = useState({ name: '', email: '', phone: '', address: '', gstNumber: '', panNumber: '' });
+const ClientCreation = ({ user, onSuccess, initialData }: { user: any, onSuccess?: () => void, initialData?: any }) => {
+  const [formData, setFormData] = useState(initialData || { name: '', email: '', phone: '', address: '', gstNumber: '', panNumber: '' });
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (initialData) setFormData(initialData);
+  }, [initialData]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/clients', {
-        method: 'POST',
+      const url = initialData?.id ? `/ api / clients / ${initialData.id}` : '/api/clients';
+      const method = initialData?.id ? 'PATCH' : 'POST';
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       });
       if (res.ok) {
         setSuccess(true);
         setFormData({ name: '', email: '', phone: '', address: '', gstNumber: '', panNumber: '' });
+        if (onSuccess) {
+          setTimeout(() => onSuccess(), 1500);
+        }
         setTimeout(() => setSuccess(false), 5000);
       } else {
         const data = await res.json();
@@ -782,60 +2138,53 @@ const ClientCreation = () => {
   };
 
   return (
-    <div className="p-8 max-w-4xl">
-      <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-zinc-100 bg-zinc-50/50 flex items-center gap-3">
-          <div className="p-2 bg-zinc-100 rounded-lg text-zinc-600">
-            <Building2 size={20} />
+    <div className="bg-white">
+      <form onSubmit={handleSubmit} className="p-8 space-y-6">
+        {error && <div className="p-4 bg-red-50 text-red-700 rounded-xl text-sm flex items-center gap-2"><AlertCircle size={18} />{error}</div>}
+        {success && <div className="p-4 bg-emerald-50 text-emerald-700 rounded-xl text-sm flex items-center gap-2"><CheckCircle2 size={18} />Client created successfully!</div>}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Client Name *</label>
+            <input required className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
           </div>
-          <div>
-            <h3 className="text-lg font-semibold text-zinc-900">Client Creation</h3>
-            <p className="text-sm text-zinc-500">Register a new client in the system.</p>
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Email ID *</label>
+            <input required type="email" className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} />
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Phone Number *</label>
+            <input required className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} />
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">GST Number</label>
+            <input className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" value={formData.gstNumber} onChange={e => setFormData({ ...formData, gstNumber: e.target.value.toUpperCase() })} />
+          </div>
+          <div className="md:col-span-2 space-y-2">
+            <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Address *</label>
+            <textarea required className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" rows={3} value={formData.address} onChange={e => setFormData({ ...formData, address: e.target.value })} />
           </div>
         </div>
-        <form onSubmit={handleSubmit} className="p-8 space-y-6">
-          {error && <div className="p-4 bg-red-50 text-red-700 rounded-xl text-sm flex items-center gap-2"><AlertCircle size={18} />{error}</div>}
-          {success && <div className="p-4 bg-emerald-50 text-emerald-700 rounded-xl text-sm flex items-center gap-2"><CheckCircle2 size={18} />Client created successfully!</div>}
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Client Name *</label>
-              <input required className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Email ID *</label>
-              <input required type="email" className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Phone Number *</label>
-              <input required className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">GST Number</label>
-              <input className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" value={formData.gstNumber} onChange={e => setFormData({ ...formData, gstNumber: e.target.value.toUpperCase() })} />
-            </div>
-            <div className="md:col-span-2 space-y-2">
-              <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Address *</label>
-              <textarea required className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" rows={3} value={formData.address} onChange={e => setFormData({ ...formData, address: e.target.value })} />
-            </div>
-          </div>
-          <button disabled={loading} type="submit" className="px-8 py-3 bg-zinc-900 text-white rounded-xl font-semibold hover:bg-zinc-800 transition-all flex items-center gap-2 shadow-xl shadow-zinc-200">
-            {loading && <Loader2 size={18} className="animate-spin" />}
-            Create Client
-          </button>
-        </form>
-      </div>
+        <button disabled={loading} type="submit" className="px-8 py-3 bg-zinc-900 text-white rounded-xl font-semibold hover:bg-zinc-800 transition-all flex items-center gap-2 shadow-xl shadow-zinc-200">
+          {loading && <Loader2 size={18} className="animate-spin" />}
+          Create Client
+        </button>
+      </form>
     </div>
   );
 };
 
-const ProjectCreation = () => {
-  const [formData, setFormData] = useState({ name: '', description: '', clientId: '', clientName: '', managerId: '', managerName: '', startDate: '', status: ProjectStatus.NOT_STARTED });
+const ProjectCreation = ({ user, onSuccess, initialData }: { user: any, onSuccess?: () => void, initialData?: any }) => {
+  const [formData, setFormData] = useState(initialData || { name: '', description: '', clientId: '', clientName: '', managerId: '', managerName: '', startDate: '', status: ProjectStatus.NOT_STARTED });
   const [clients, setClients] = useState<any[]>([]);
   const [managers, setManagers] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (initialData) setFormData(initialData);
+  }, [initialData]);
 
   useEffect(() => {
     fetch('/api/clients').then(res => res.json()).then(setClients);
@@ -847,14 +2196,19 @@ const ProjectCreation = () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/projects', {
-        method: 'POST',
+      const url = initialData?.id ? `/ api / projects / ${initialData.id}` : '/api/projects';
+      const method = initialData?.id ? 'PATCH' : 'POST';
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       });
       if (res.ok) {
         setSuccess(true);
         setFormData({ name: '', description: '', clientId: '', clientName: '', managerId: '', managerName: '', startDate: '', status: ProjectStatus.NOT_STARTED });
+        if (onSuccess) {
+          setTimeout(() => onSuccess(), 1500);
+        }
         setTimeout(() => setSuccess(false), 5000);
       } else {
         const data = await res.json();
@@ -868,72 +2222,65 @@ const ProjectCreation = () => {
   };
 
   return (
-    <div className="p-8 max-w-4xl">
-      <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-zinc-100 bg-zinc-50/50 flex items-center gap-3">
-          <div className="p-2 bg-zinc-100 rounded-lg text-zinc-600">
-            <FolderKanban size={20} />
+    <div className="bg-white">
+      <form onSubmit={handleSubmit} className="p-8 space-y-6">
+        {error && <div className="p-4 bg-red-50 text-red-700 rounded-xl text-sm flex items-center gap-2"><AlertCircle size={18} />{error}</div>}
+        {success && <div className="p-4 bg-emerald-50 text-emerald-700 rounded-xl text-sm flex items-center gap-2"><CheckCircle2 size={18} />Project created successfully!</div>}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Project Name *</label>
+            <input required className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
           </div>
-          <div>
-            <h3 className="text-lg font-semibold text-zinc-900">Project Creation</h3>
-            <p className="text-sm text-zinc-500">Create a new project and assign a manager.</p>
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Client *</label>
+            <select required className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none bg-white focus:ring-2 focus:ring-zinc-500/10" value={formData.clientId} onChange={e => {
+              const client = clients.find(c => c.id === e.target.value);
+              setFormData({ ...formData, clientId: e.target.value, clientName: client?.name || '' });
+            }}>
+              <option value="">Select Client</option>
+              {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Project Manager *</label>
+            <select required className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none bg-white focus:ring-2 focus:ring-zinc-500/10" value={formData.managerId} onChange={e => {
+              const mgr = managers.find(m => m.id === e.target.value);
+              setFormData({ ...formData, managerId: e.target.value, managerName: `${mgr?.firstName} ${mgr?.lastName}` });
+            }}>
+              <option value="">Select Manager</option>
+              {managers.map(m => <option key={m.id} value={m.id}>{m.firstName} {m.lastName}</option>)}
+            </select>
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Start Date *</label>
+            <input required type="date" className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" value={formData.startDate} onChange={e => setFormData({ ...formData, startDate: e.target.value })} />
+          </div>
+          <div className="md:col-span-2 space-y-2">
+            <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Description</label>
+            <textarea className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" rows={2} value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} />
           </div>
         </div>
-        <form onSubmit={handleSubmit} className="p-8 space-y-6">
-          {error && <div className="p-4 bg-red-50 text-red-700 rounded-xl text-sm flex items-center gap-2"><AlertCircle size={18} />{error}</div>}
-          {success && <div className="p-4 bg-emerald-50 text-emerald-700 rounded-xl text-sm flex items-center gap-2"><CheckCircle2 size={18} />Project created successfully!</div>}
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Project Name *</label>
-              <input required className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Client *</label>
-              <select required className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none bg-white focus:ring-2 focus:ring-zinc-500/10" value={formData.clientId} onChange={e => {
-                const client = clients.find(c => c.id === e.target.value);
-                setFormData({ ...formData, clientId: e.target.value, clientName: client?.name || '' });
-              }}>
-                <option value="">Select Client</option>
-                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Project Manager *</label>
-              <select required className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none bg-white focus:ring-2 focus:ring-zinc-500/10" value={formData.managerId} onChange={e => {
-                const mgr = managers.find(m => m.id === e.target.value);
-                setFormData({ ...formData, managerId: e.target.value, managerName: `${mgr?.firstName} ${mgr?.lastName}` });
-              }}>
-                <option value="">Select Manager</option>
-                {managers.map(m => <option key={m.id} value={m.id}>{m.firstName} {m.lastName}</option>)}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Start Date *</label>
-              <input required type="date" className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" value={formData.startDate} onChange={e => setFormData({ ...formData, startDate: e.target.value })} />
-            </div>
-            <div className="md:col-span-2 space-y-2">
-              <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Description</label>
-              <textarea className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" rows={2} value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} />
-            </div>
-          </div>
-          <button disabled={loading} type="submit" className="px-8 py-3 bg-zinc-900 text-white rounded-xl font-semibold hover:bg-zinc-800 transition-all flex items-center gap-2 shadow-xl shadow-zinc-200">
-            {loading && <Loader2 size={18} className="animate-spin" />}
-            Create Project
-          </button>
-        </form>
-      </div>
+        <button disabled={loading} type="submit" className="px-8 py-3 bg-zinc-900 text-white rounded-xl font-semibold hover:bg-zinc-800 transition-all flex items-center gap-2 shadow-xl shadow-zinc-200">
+          {loading && <Loader2 size={18} className="animate-spin" />}
+          Create Project
+        </button>
+      </form>
     </div>
   );
 };
 
-const JobCreation = () => {
-  const [formData, setFormData] = useState({ title: '', description: '', projectId: '', projectName: '', assigneeId: '', assigneeName: '', dueDate: '', status: JobStatus.OPEN, priority: JobPriority.MEDIUM });
+const JobCreation = ({ user, onSuccess, initialData }: { user: any, onSuccess?: () => void, initialData?: any }) => {
+  const [formData, setFormData] = useState(initialData || { title: '', description: '', projectId: '', projectName: '', assigneeId: '', assigneeName: '', dueDate: '', status: JobStatus.OPEN, priority: JobPriority.MEDIUM });
   const [projects, setProjects] = useState<any[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (initialData) setFormData(initialData);
+  }, [initialData]);
 
   useEffect(() => {
     fetch('/api/projects').then(res => res.json()).then(setProjects);
@@ -945,14 +2292,19 @@ const JobCreation = () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/jobs', {
-        method: 'POST',
+      const url = initialData?.id ? `/ api / jobs / ${initialData.id}` : '/api/jobs';
+      const method = initialData?.id ? 'PATCH' : 'POST';
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       });
       if (res.ok) {
         setSuccess(true);
         setFormData({ title: '', description: '', projectId: '', projectName: '', assigneeId: '', assigneeName: '', dueDate: '', status: JobStatus.OPEN, priority: JobPriority.MEDIUM });
+        if (onSuccess) {
+          setTimeout(() => onSuccess(), 1500);
+        }
         setTimeout(() => setSuccess(false), 5000);
       } else {
         const data = await res.json();
@@ -966,85 +2318,76 @@ const JobCreation = () => {
   };
 
   return (
-    <div className="p-8 max-w-4xl">
-      <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-zinc-100 bg-zinc-50/50 flex items-center gap-3">
-          <div className="p-2 bg-zinc-100 rounded-lg text-zinc-600">
-            <ClipboardList size={20} />
+    <div className="bg-white">
+      <form onSubmit={handleSubmit} className="p-8 space-y-6">
+        {error && <div className="p-4 bg-red-50 text-red-700 rounded-xl text-sm flex items-center gap-2"><AlertCircle size={18} />{error}</div>}
+        {success && <div className="p-4 bg-emerald-50 text-emerald-700 rounded-xl text-sm flex items-center gap-2"><CheckCircle2 size={18} />Job created successfully!</div>}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Job Title *</label>
+            <input required className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" value={formData.title} onChange={e => setFormData({ ...formData, title: e.target.value })} />
           </div>
-          <div>
-            <h3 className="text-lg font-semibold text-zinc-900">Job Creation</h3>
-            <p className="text-sm text-zinc-500">Assign a new task (job) under a project.</p>
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Project *</label>
+            <select required className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none bg-white focus:ring-2 focus:ring-zinc-500/10" value={formData.projectId} onChange={e => {
+              const project = projects.find(p => p.id === e.target.value);
+              setFormData({ ...formData, projectId: e.target.value, projectName: project?.name || '' });
+            }}>
+              <option value="">Select Project</option>
+              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Assign To *</label>
+            <select required className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none bg-white focus:ring-2 focus:ring-zinc-500/10" value={formData.assigneeId} onChange={e => {
+              const emp = employees.find(emp => (emp.id || emp.employeeCode) === e.target.value);
+              setFormData({ ...formData, assigneeId: e.target.value, assigneeName: emp ? `${emp.firstName} ${emp.lastName}` : '' });
+            }}>
+              <option value="">Select Employee</option>
+              {employees.map(emp => <option key={emp.id || emp.employeeCode} value={emp.id || emp.employeeCode}>{emp.firstName} {emp.lastName}</option>)}
+            </select>
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Due Date *</label>
+            <input required type="date" className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" value={formData.dueDate} onChange={e => setFormData({ ...formData, dueDate: e.target.value })} />
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Priority *</label>
+            <select required className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none bg-white focus:ring-2 focus:ring-zinc-500/10" value={formData.priority} onChange={e => setFormData({ ...formData, priority: e.target.value as JobPriority })}>
+              {Object.values(JobPriority).map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </div>
+          <div className="md:col-span-2 space-y-2">
+            <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Description</label>
+            <textarea className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" rows={2} value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} />
           </div>
         </div>
-        <form onSubmit={handleSubmit} className="p-8 space-y-6">
-          {error && <div className="p-4 bg-red-50 text-red-700 rounded-xl text-sm flex items-center gap-2"><AlertCircle size={18} />{error}</div>}
-          {success && <div className="p-4 bg-emerald-50 text-emerald-700 rounded-xl text-sm flex items-center gap-2"><CheckCircle2 size={18} />Job created successfully!</div>}
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Job Title *</label>
-              <input required className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" value={formData.title} onChange={e => setFormData({ ...formData, title: e.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Project *</label>
-              <select required className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none bg-white focus:ring-2 focus:ring-zinc-500/10" value={formData.projectId} onChange={e => {
-                const project = projects.find(p => p.id === e.target.value);
-                setFormData({ ...formData, projectId: e.target.value, projectName: project?.name || '' });
-              }}>
-                <option value="">Select Project</option>
-                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Assign To *</label>
-              <select required className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none bg-white focus:ring-2 focus:ring-zinc-500/10" value={formData.assigneeId} onChange={e => {
-                const emp = employees.find(emp => (emp.id || emp.employeeCode) === e.target.value);
-                setFormData({ ...formData, assigneeId: e.target.value, assigneeName: emp ? `${emp.firstName} ${emp.lastName}` : '' });
-              }}>
-                <option value="">Select Employee</option>
-                {employees.map(emp => <option key={emp.id || emp.employeeCode} value={emp.id || emp.employeeCode}>{emp.firstName} {emp.lastName}</option>)}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Due Date *</label>
-              <input required type="date" className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" value={formData.dueDate} onChange={e => setFormData({ ...formData, dueDate: e.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Priority *</label>
-              <select required className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none bg-white focus:ring-2 focus:ring-zinc-500/10" value={formData.priority} onChange={e => setFormData({ ...formData, priority: e.target.value as JobPriority })}>
-                {Object.values(JobPriority).map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </div>
-            <div className="md:col-span-2 space-y-2">
-              <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Description</label>
-              <textarea className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-zinc-500/10" rows={2} value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} />
-            </div>
-          </div>
-          <button disabled={loading} type="submit" className="px-8 py-3 bg-zinc-900 text-white rounded-xl font-semibold hover:bg-zinc-800 transition-all flex items-center gap-2 shadow-xl shadow-zinc-200">
-            {loading && <Loader2 size={18} className="animate-spin" />}
-            Create Job
-          </button>
-        </form>
-      </div>
+        <button disabled={loading} type="submit" className="px-8 py-3 bg-zinc-900 text-white rounded-xl font-semibold hover:bg-zinc-800 transition-all flex items-center gap-2 shadow-xl shadow-zinc-200">
+          {loading && <Loader2 size={18} className="animate-spin" />}
+          Create Job
+        </button>
+      </form>
     </div>
   );
 };
 
-const SettingsPage = () => {
+const SettingsPage = ({ user }: { user: any }) => {
   const [outlookStatus, setOutlookStatus] = useState<{ connected: boolean; account?: string } | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetch('/api/settings/outlook')
-      .then(res => res.json())
-      .then(setOutlookStatus);
-  }, []);
+    if (user?.id) {
+      fetch(`/ api / settings / outlook / ${user.id}`)
+        .then(res => res.json())
+        .then(setOutlookStatus);
+    }
+  }, [user?.id]);
 
   const handleConnectOutlook = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/auth/outlook/url');
+      const res = await fetch(`/ api / auth / outlook / url ? userId = ${user?.id}`);
       const data = await res.json();
 
       if (data.url) {
@@ -1062,8 +2405,8 @@ const SettingsPage = () => {
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'OUTLOOK_AUTH_SUCCESS') {
-        fetch('/api/settings/outlook')
+      if (event.data?.type === 'OUTLOOK_AUTH_SUCCESS' && user?.id) {
+        fetch(`/ api / settings / outlook / ${user.id}`)
           .then(res => res.json())
           .then(setOutlookStatus);
       }
@@ -1077,63 +2420,72 @@ const SettingsPage = () => {
       <div className="space-y-8">
         <section className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
           <div className="p-6 border-b border-zinc-100 bg-zinc-50/50">
-            <h3 className="text-lg font-semibold text-zinc-900">Outlook Integration</h3>
-            <p className="text-sm text-zinc-500">Configure the email account used for system notifications and invites.</p>
+            <h3 className="text-lg font-semibold text-zinc-900">Personal Outlook Account</h3>
+            <p className="text-sm text-zinc-500">Connect your Outlook account to sync work logs and communications.</p>
           </div>
           <div className="p-8">
             {outlookStatus?.connected ? (
-              <div className="flex items-center justify-between p-4 bg-emerald-50 border border-emerald-100 rounded-xl">
+              <div className="flex items-center justify-between p-4 rounded-xl border border-emerald-100 bg-emerald-50/50">
                 <div className="flex items-center gap-4">
-                  <div className="p-2 bg-emerald-100 rounded-lg text-emerald-600">
-                    <Mail size={20} />
+                  <div className="w-12 h-12 rounded-xl bg-white shadow-sm flex items-center justify-center text-emerald-600">
+                    <Mail size={24} />
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-emerald-900">Connected to Outlook</p>
-                    <p className="text-xs text-emerald-700">{outlookStatus.account}</p>
+                    <div className="text-sm font-bold text-zinc-900">{outlookStatus.account}</div>
+                    <div className="text-xs text-emerald-600 font-medium">Successfully Connected</div>
                   </div>
                 </div>
                 <button
-                  onClick={handleConnectOutlook}
-                  className="text-xs font-semibold text-emerald-700 hover:underline"
+                  onClick={async () => {
+                    if (confirm('Are you sure you want to disconnect your Outlook account?')) {
+                      await fetch('/api/settings/outlook/disconnect', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ userId: user?.id })
+                      });
+                      setOutlookStatus({ connected: false });
+                    }
+                  }}
+                  className="px-4 py-2 text-xs font-bold text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                 >
-                  Change Account
+                  Disconnect
                 </button>
               </div>
             ) : (
-              <div className="flex items-center justify-between p-4 bg-zinc-50 border border-zinc-200 rounded-xl">
-                <div className="flex items-center gap-4">
-                  <div className="p-2 bg-zinc-200 rounded-lg text-zinc-500">
-                    <Mail size={20} />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-zinc-900">Outlook Not Connected</p>
-                    <p className="text-xs text-zinc-500">Connect an account to enable automated emails.</p>
-                  </div>
+              <div className="flex flex-col items-center gap-6 py-4">
+                <div className="w-20 h-20 rounded-2xl bg-zinc-50 flex items-center justify-center text-zinc-300">
+                  <Mail size={40} />
+                </div>
+                <div className="text-center space-y-1">
+                  <div className="text-lg font-bold text-zinc-900">Connect your Outlook</div>
+                  <p className="text-sm text-zinc-500 max-w-xs">Allow MIS to access your work logs and calendar for better synchronization.</p>
                 </div>
                 <button
                   onClick={handleConnectOutlook}
-                  className="px-4 py-2 bg-zinc-900 text-white rounded-lg text-sm font-semibold hover:bg-zinc-800 transition-all"
+                  disabled={loading}
+                  className="px-8 py-3 bg-zinc-900 text-white rounded-xl font-bold hover:bg-zinc-800 transition-all shadow-lg shadow-zinc-200 flex items-center gap-2"
                 >
-                  Connect Outlook
+                  {loading ? <Loader2 size={18} className="animate-spin" /> : <Mail size={18} />}
+                  <span>Connect with Outlook</span>
                 </button>
               </div>
             )}
           </div>
         </section>
 
-        <section className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-zinc-100 bg-zinc-50/50">
-            <h3 className="text-lg font-semibold text-zinc-900">Role Access Control</h3>
-            <p className="text-sm text-zinc-500">Manage permissions for each administrative role.</p>
+        <section>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-xl font-bold text-zinc-900">Login Profiles Management</h3>
           </div>
-          <div className="p-8">
-            <PermissionsManager />
-          </div>
+          <LoginProfileManager />
         </section>
+
+        <PermissionsManager />
       </div>
     </div>
   );
 };
+
 
 const LoginPage = ({ onLogin }: { onLogin: (user: any) => void }) => {
   const [email, setEmail] = useState('');
@@ -1779,7 +3131,7 @@ const RegistrationPage = () => {
                   <div className="space-y-2">
                     <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">PAN Card Attachment *</label>
                     <div className="flex items-center gap-4">
-                      <div className={`p-3 rounded-xl ${attachments.panAttachment ? 'bg-emerald-50 text-emerald-600' : 'bg-zinc-50 text-zinc-400'}`}>
+                      <div className={`p - 3 rounded - xl ${attachments.panAttachment ? 'bg-emerald-50 text-emerald-600' : 'bg-zinc-50 text-zinc-400'}`}>
                         <FileText size={24} />
                       </div>
                       <input type="file" accept="image/*,application/pdf" className="hidden" id="pan-upload" onChange={e => handleFileChange(e, 'panAttachment')} />
@@ -1792,7 +3144,7 @@ const RegistrationPage = () => {
                   <div className="space-y-2">
                     <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Aadhaar Card Attachment *</label>
                     <div className="flex items-center gap-4">
-                      <div className={`p-3 rounded-xl ${attachments.aadhaarAttachment ? 'bg-emerald-50 text-emerald-600' : 'bg-zinc-50 text-zinc-400'}`}>
+                      <div className={`p - 3 rounded - xl ${attachments.aadhaarAttachment ? 'bg-emerald-50 text-emerald-600' : 'bg-zinc-50 text-zinc-400'}`}>
                         <FileText size={24} />
                       </div>
                       <input type="file" accept="image/*,application/pdf" className="hidden" id="aadhaar-upload" onChange={e => handleFileChange(e, 'aadhaarAttachment')} />
@@ -1805,7 +3157,7 @@ const RegistrationPage = () => {
                   <div className="space-y-2">
                     <label className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">Bank Cheque Book Attachment *</label>
                     <div className="flex items-center gap-4">
-                      <div className={`p-3 rounded-xl ${attachments.chequeBookAttachment ? 'bg-emerald-50 text-emerald-600' : 'bg-zinc-50 text-zinc-400'}`}>
+                      <div className={`p - 3 rounded - xl ${attachments.chequeBookAttachment ? 'bg-emerald-50 text-emerald-600' : 'bg-zinc-50 text-zinc-400'}`}>
                         <FileText size={24} />
                       </div>
                       <input type="file" accept="image/*,application/pdf" className="hidden" id="cheque-upload" onChange={e => handleFileChange(e, 'chequeBookAttachment')} />
@@ -1929,40 +3281,40 @@ export default function App() {
                       <Dashboard />
                     </>
                   } />
-                  <Route path="/employees/create" element={
+                  <Route path="/employees" element={
                     <>
-                      <Header title="Employee Creation" user={user} />
-                      <EmployeeCreation />
+                      <Header title="Employee Master" user={user} />
+                      <EmployeeMaster user={user} />
                     </>
                   } />
-                  <Route path="/clients/create" element={
+                  <Route path="/clients" element={
                     <>
-                      <Header title="Client Creation" user={user} />
-                      <ClientCreation />
+                      <Header title="Client Master" user={user} />
+                      <ClientMaster user={user} />
                     </>
                   } />
-                  <Route path="/projects/create" element={
+                  <Route path="/projects" element={
                     <>
-                      <Header title="Project Creation" user={user} />
-                      <ProjectCreation />
+                      <Header title="Project Master" user={user} />
+                      <ProjectMaster user={user} />
                     </>
                   } />
-                  <Route path="/jobs/create" element={
+                  <Route path="/jobs" element={
                     <>
-                      <Header title="Job Creation" user={user} />
-                      <JobCreation />
+                      <Header title="Job Master" user={user} />
+                      <JobMaster user={user} />
+                    </>
+                  } />
+                  <Route path="/timesheets" element={
+                    <>
+                      <Header title="Timesheet Entry" user={user} />
+                      <TimesheetEntry user={user} />
                     </>
                   } />
                   <Route path="/settings" element={
                     <>
                       <Header title="System Settings" user={user} />
-                      <SettingsPage />
-                    </>
-                  } />
-                  <Route path="/employees" element={
-                    <>
-                      <Header title="Employee Directory" user={user} />
-                      <EmployeeList />
+                      <SettingsPage user={user} />
                     </>
                   } />
                 </Routes>
